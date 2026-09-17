@@ -6,7 +6,7 @@ const ordinaryCompanyMemberTests = new Set([
 ]);
 
 const safetyManagerTests = new Set([
-  "Drive archive review controls update scope and status for safety managers"
+  "Source review controls update scope and status for safety managers"
 ]);
 
 test.beforeEach(async ({ page }, testInfo) => {
@@ -38,7 +38,7 @@ async function openProgramLibrary(page, projectName) {
     await page.goto("/");
   } else {
     await page.goto("/");
-    await page.getByRole("button", { name: "Forms & programs", exact: true }).click();
+    await page.getByRole("button", { name: "Company library", exact: true }).click();
   }
 }
 
@@ -61,7 +61,7 @@ test("private safety program library exposes source trace and folders", async ({
   await openProgramLibrary(page, testInfo.project.name);
   await requirePrivateLibrary(page);
 
-  await expect(page.getByRole("heading", { name: "Forms & program library" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Company forms & programs" })).toBeVisible();
   await expect(page.getByText("Private-source inventory connected", { exact: true })).toBeVisible();
   await expect(page.getByText("Accident Prevention Program", { exact: true })).toBeVisible();
 
@@ -74,7 +74,7 @@ test("private safety program library exposes source trace and folders", async ({
 test("a program form submits without caller-authored evidence hashes", async ({ page }, testInfo) => {
   await openProgramLibrary(page, testInfo.project.name);
   await page.locator('[data-action="program-category"][data-category="forms"]').click();
-  await page.getByRole("tab", { name: /Templates/ }).click();
+  await page.getByRole("tab", { name: /Ready-to-use forms/ }).click();
 
   const card = page.locator(".program-card").filter({ hasText: "Test safety acknowledgement" });
   await card.getByRole("button", { name: "Start form" }).click();
@@ -133,7 +133,7 @@ test("verified original forms can be previewed and downloaded", async ({ page },
   await openProgramLibrary(page, testInfo.project.name);
   await requirePrivateLibrary(page);
   await page.locator('[data-action="program-category"][data-category="forms"]').click();
-  await page.getByRole("tab", { name: /Original forms/ }).click();
+  await page.getByRole("tab", { name: /Published originals/ }).click();
 
   const originalCards = page.locator(".form-file-card");
   await expect(originalCards).toHaveCount(5);
@@ -157,7 +157,7 @@ test("verified original forms can be previewed and downloaded", async ({ page },
 test("a company form upload is fingerprinted, persisted, and downloadable", async ({ page }, testInfo) => {
   await openProgramLibrary(page, testInfo.project.name);
   await page.locator('[data-action="program-category"][data-category="forms"]').click();
-  await page.getByRole("button", { name: "Stage form locally" }).click();
+  await page.getByRole("button", { name: "Stage form locally" }).first().click();
 
   await page.getByLabel("Source file").setInputFiles({
     name: "weekly-safety-check.pdf",
@@ -207,13 +207,13 @@ test("a company form upload is fingerprinted, persisted, and downloadable", asyn
   expect(download.suggestedFilename()).toBe("weekly-safety-check.pdf");
 });
 
-test("Drive archive review shows full original trace and classification filters", async ({ page }, testInfo) => {
+test("Source review shows full original trace and classification filters", async ({ page }, testInfo) => {
   await openProgramLibrary(page, testInfo.project.name);
   await page.locator('[data-action="program-category"][data-category="forms"]').click();
-  await page.getByRole("tab", { name: /Drive archive review/ }).click();
+  await page.getByRole("tab", { name: /Source review/ }).click();
   await expandDriveArchiveFolders(page);
 
-  await expect(page.getByRole("heading", { level: 2, name: "Drive archive review" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Source review" })).toBeVisible();
   await expect(page.getByText("7 source items · 4 verified original PDFs · 26 verified PDF pages", { exact: true })).toBeVisible();
   await expect(page.locator(".import-candidate-card")).toHaveCount(7);
 
@@ -258,7 +258,7 @@ test("Drive archive review shows full original trace and classification filters"
 test("Drive archive folders organize originals into browsable categories", async ({ page }, testInfo) => {
   await openProgramLibrary(page, testInfo.project.name);
   await page.locator('[data-action="program-category"][data-category="forms"]').click();
-  await page.getByRole("tab", { name: /Drive archive review/ }).click();
+  await page.getByRole("tab", { name: /Source review/ }).click();
 
   const library = page.locator('.import-folder-library[aria-label="Drive folder library"]');
   await expect(library).toBeVisible();
@@ -401,7 +401,7 @@ test("Drive archive secure download authorizes by candidate id", async ({ page }
   }));
   await openProgramLibrary(page, testInfo.project.name);
   await page.locator('[data-action="program-category"][data-category="forms"]').click();
-  await page.getByRole("tab", { name: /Drive archive review/ }).click();
+  await page.getByRole("tab", { name: /Source review/ }).click();
   await expandDriveArchiveFolders(page);
 
   const card = page.locator(".import-candidate-card").filter({
@@ -423,7 +423,7 @@ test("Drive archive secure download authorizes by candidate id", async ({ page }
 test("Drive archive never certifies a PDF from its filename alone", async ({ page }, testInfo) => {
   await openProgramLibrary(page, testInfo.project.name);
   await page.locator('[data-action="program-category"][data-category="forms"]').click();
-  await page.getByRole("tab", { name: /Drive archive review/ }).click();
+  await page.getByRole("tab", { name: /Source review/ }).click();
   await expandDriveArchiveFolders(page);
 
   await expect(page.getByText("8 source items · 4 verified original PDFs · 26 verified PDF pages", { exact: true })).toBeVisible();
@@ -435,7 +435,7 @@ test("Drive archive never certifies a PDF from its filename alone", async ({ pag
 test("Drive archive rejects mismatched download metadata", async ({ page }, testInfo) => {
   await openProgramLibrary(page, testInfo.project.name);
   await page.locator('[data-action="program-category"][data-category="forms"]').click();
-  await page.getByRole("tab", { name: /Drive archive review/ }).click();
+  await page.getByRole("tab", { name: /Source review/ }).click();
   await expandDriveArchiveFolders(page);
 
   const card = page.locator(".import-candidate-card").filter({
@@ -448,9 +448,9 @@ test("Drive archive rejects mismatched download metadata", async ({ page }, test
 
 test("Drive archive query failure does not break the workspace", async ({ page }, testInfo) => {
   await openProgramLibrary(page, testInfo.project.name);
-  await expect(page.getByRole("heading", { name: "Forms & program library" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Company forms & programs" })).toBeVisible();
   await page.locator('[data-action="program-category"][data-category="forms"]').click();
-  await page.getByRole("tab", { name: /Drive archive review/ }).click();
+  await page.getByRole("tab", { name: /Source review/ }).click();
 
   await expect(page.getByText(/private Drive archive is temporarily unavailable/i)).toBeVisible();
   await expect(page.getByText("Workspace load failed", { exact: true })).toHaveCount(0);
@@ -466,7 +466,7 @@ test("Drive company access is visible to ordinary authorized company members", a
   await openProgramLibrary(page, testInfo.project.name);
   await page.locator('[data-action="program-category"][data-category="forms"]').click();
 
-  const archiveTab = page.getByRole("tab", { name: /Company originals/ });
+  const archiveTab = page.getByRole("tab", { name: /Company source files/ });
   await expect(archiveTab).toBeVisible();
   await archiveTab.click();
   await expandDriveArchiveFolders(page);
@@ -504,11 +504,11 @@ test("Drive company access is visible to ordinary authorized company members", a
   });
 });
 
-test("Drive archive review controls update scope and status for safety managers", async ({ page }, testInfo) => {
+test("Source review controls update scope and status for safety managers", async ({ page }, testInfo) => {
   await openProgramLibrary(page, testInfo.project.name);
   await page.locator('[data-action="program-category"][data-category="forms"]').click();
 
-  const archiveTab = page.getByRole("tab", { name: /Drive archive review/ });
+  const archiveTab = page.getByRole("tab", { name: /Source review/ });
   await expect(archiveTab).toBeVisible();
   await archiveTab.click();
   await expandDriveArchiveFolders(page);
@@ -547,7 +547,7 @@ test("Drive archive review controls update scope and status for safety managers"
 test("Drive restricted candidates cannot be made company visible", async ({ page }, testInfo) => {
   await openProgramLibrary(page, testInfo.project.name);
   await page.locator('[data-action="program-category"][data-category="forms"]').click();
-  await page.getByRole("tab", { name: /Drive archive review/ }).click();
+  await page.getByRole("tab", { name: /Source review/ }).click();
   await expandDriveArchiveFolders(page);
 
   const restrictedCard = page.locator(".import-candidate-card").filter({

@@ -73,7 +73,7 @@
 
   const state = {
     view: localStorage.getItem(`${uiStoragePrefix}view`) || "dashboard",
-    locationId: localStorage.getItem(`${uiStoragePrefix}location`) || "all",
+    locationId: localStorage.getItem(`${uiStoragePrefix}location`) || "",
     theme: localStorage.getItem(`${uiStoragePrefix}theme`) || "light",
     sidebarOpen: false,
     searchQuery: "",
@@ -83,13 +83,18 @@
     standardMode: "manufacturing",
     standardAuthority: "location",
     referenceId: null,
-    programCategory: "programs",
+    programCategory: "forms",
     programQuery: "",
     formLibraryMode: localStorage.getItem(`${uiStoragePrefix}formsMode`) || "originals",
     formArchiveKind: localStorage.getItem(`${uiStoragePrefix}formArchiveKind`) || "all",
     formArchiveStatus: localStorage.getItem(`${uiStoragePrefix}formArchiveStatus`) || "all",
     formArchiveError: "",
     candidateReviewSavingId: null,
+    inspectionCategory: "all",
+    incidentStatus: "all",
+    actionSort: "priority",
+    documentType: "all",
+    peopleReadiness: "all",
     localFormUploads: [],
     programDrawerId: null,
     employeeDrawerId: null,
@@ -104,6 +109,7 @@
     authUser: null,
     authMessage: "",
     authBusy: false,
+    handoffRefreshPending: false,
     employeeHandoff: {
       status: isEmployeeHandoffMode ? "loading" : "inactive",
       data: null,
@@ -183,7 +189,7 @@
     {
       label: "Run safety",
       items: [
-        { id: "inspections", label: "Forms", icon: "F" },
+        { id: "inspections", label: "Inspections", icon: "I" },
         { id: "committee", label: "Committee", icon: "C" },
         { id: "training", label: "Training", icon: "T" },
         { id: "incidents", label: "Incidents", icon: "!", danger: true },
@@ -193,8 +199,8 @@
     {
       label: "Library & compliance",
       items: [
-        { id: "programs", label: "Forms & programs", icon: "P" },
-        { id: "documents", label: "Documents", icon: "D" },
+        { id: "programs", label: "Company library", icon: "L", libraryCategory: "forms" },
+        { id: "documents", label: "Policies & documents", icon: "D" },
         { id: "standards", label: "OSHA guide", icon: "§" }
       ]
     },
@@ -221,8 +227,8 @@
     },
     inspections: {
       eyebrow: "Field assurance",
-      title: "Forms & inspections",
-      description: "Schedule repeatable work, capture evidence in the field, and turn findings into accountable actions."
+      title: "Inspections",
+      description: "Run a published inspection template and retain a signed, location-specific submission."
     },
     committee: {
       eyebrow: "Worker participation",
@@ -237,22 +243,22 @@
     incidents: {
       eyebrow: "Incident management",
       title: "Incidents & near misses",
-      description: "Capture the first report quickly, investigate consistently, and connect every finding to follow-up work."
+      description: "Capture the first report quickly and keep the incident register visible by location and status."
     },
     actions: {
-      eyebrow: "Close the loop",
+      eyebrow: "Assigned follow-up",
       title: "Action items",
-      description: "Keep findings from inspections, hazards, and incidents visible until evidence is reviewed and accepted."
+      description: "Track the required correction, owner, priority, and due date. Evidence-backed closeout is not enabled yet."
     },
     documents: {
       eyebrow: "Controlled library",
-      title: "Company documents",
-      description: "Publish the right version, target the right locations, and prove that required workers acknowledged it."
+      title: "Policies & controlled documents",
+      description: "Review controlled-document metadata and acknowledgement status. Reading and publication controls are not enabled yet."
     },
     programs: {
       eyebrow: "Reusable safety content",
-      title: "Forms & program library",
-      description: "Find ready-to-use forms and programs first, with imports and source originals kept in their own review area."
+      title: "Company forms & programs",
+      description: "Find company source files, ready-to-use forms, programs, and retained records in one access-controlled library."
     },
     standards: {
       eyebrow: "Oregon manufacturing reference",
@@ -699,9 +705,10 @@
     referenceReturnFocus = null;
   }
 
-  function renderLocationOptions(includeAll = true, selectedId = state.locationId) {
+  function renderLocationOptions(includeAll = true, selectedId = state.locationId, requireExplicit = false) {
     return `
       ${includeAll ? `<option value="all" ${selectedId === "all" ? "selected" : ""}>${escapeHtml(allLocationsLabel())}</option>` : ""}
+      ${!includeAll && requireExplicit && !selectedId ? `<option value="" selected disabled>Select a location</option>` : ""}
       ${data.locations.map((location) => `
         <option value="${location.id}" ${selectedId === location.id ? "selected" : ""}>${escapeHtml(location.name)}</option>
       `).join("")}
@@ -988,7 +995,7 @@
     data.locations = [];
     resetTenantOperationalData();
     resetTenantProgramLibrary();
-    state.locationId = "all";
+    state.locationId = "";
     state.searchQuery = "";
     state.programQuery = "";
     state.modal = null;
@@ -1000,6 +1007,7 @@
     state.activeFormId = null;
     state.selectedTemplateId = null;
     state.localFormUploads = [];
+    state.handoffRefreshPending = false;
   }
 
   async function loadAuthenticatedWorkspace(user, transitionEpoch = authTransitionEpoch) {
@@ -1449,6 +1457,7 @@
           training: workerAssignments.length
             ? Math.round((completeAssignments / workerAssignments.length) * 100)
             : 0,
+          trainingAssigned: workerAssignments.length,
           credentials: `${workerCertifications.length} record${workerCertifications.length === 1 ? "" : "s"}`,
           documentCount: workerDocuments.length + workerEmployeeForms.length,
           pendingDocuments: pendingDocuments + pendingEmployeeForms,
@@ -1462,7 +1471,9 @@
                 ? "Form due"
                 : hasTrainingDue
                   ? "Training due"
-                  : "Current"
+                  : workerAssignments.length || workerCertifications.length
+                    ? "Current"
+                    : "Not measured"
         };
       });
 
@@ -1562,6 +1573,7 @@
         locationId: incident.location_id,
         reportedBy: memberNameById.get(incident.reported_by) || "Authorized reporter",
         date: formatShortDate(incident.occurred_at),
+        occurredAt: incident.occurred_at,
         status: readableStatus(incident.status),
         daysOpen: daysOpenSince(incident.created_at)
       }));
@@ -2373,11 +2385,23 @@
         state.formArchiveStatus = "all";
         localStorage.setItem(`${uiStoragePrefix}formArchiveStatus`, state.formArchiveStatus);
       }
+      if (
+        state.formLibraryMode === "originals"
+        && !originalFormTemplates().length
+        && programLibrary.importCandidates.length
+      ) {
+        state.formLibraryMode = "archive";
+        localStorage.setItem(`${uiStoragePrefix}formsMode`, state.formLibraryMode);
+      }
       state.localFormUploads = [];
-      state.locationId = membership.default_location_id
-        && data.locations.some((location) => location.id === membership.default_location_id)
-        ? membership.default_location_id
-        : "all";
+      const requestedLocationId = state.locationId;
+      state.locationId = requestedLocationId === "all"
+        || data.locations.some((location) => location.id === requestedLocationId)
+        ? requestedLocationId
+        : membership.default_location_id
+          && data.locations.some((location) => location.id === membership.default_location_id)
+          ? membership.default_location_id
+          : "all";
       state.authUser = user;
       state.authStatus = "ready";
       state.authMessage = "";
@@ -2760,12 +2784,14 @@
       incidents: data.incidents.filter((incident) => incident.status !== "Closed").length,
       actions: data.actions.filter((action) => action.status !== "Closed").length
     }[item.id] || 0;
+    const action = item.libraryCategory ? "open-library" : "navigate";
     return `
       <button
         class="nav-button ${state.view === item.id ? "active" : ""}"
         type="button"
-        data-action="navigate"
+        data-action="${action}"
         data-view="${item.id}"
+        ${item.libraryCategory ? `data-category="${item.libraryCategory}"` : ""}
         ${state.view === item.id ? 'aria-current="page"' : ""}
       >
         <span class="nav-icon" aria-hidden="true">${item.icon}</span>
@@ -2844,6 +2870,7 @@
             <span class="status-dot" aria-hidden="true"></span>
             <span>Supabase ready</span>
           </div>
+          <button class="icon-button" type="button" data-action="refresh-workspace" aria-label="Refresh workspace data" title="Refresh workspace data">↻</button>
           <button class="icon-button" type="button" data-action="navigate" data-view="settings" aria-label="Open settings">⚙</button>
         </div>
       </header>
@@ -2853,9 +2880,9 @@
   function renderMobileNav() {
     const items = [
       { id: "dashboard", label: "Today", icon: "⌂" },
-      { id: "inspections", label: "Forms", icon: "F" },
+      { id: "inspections", label: "Inspect", icon: "I" },
       { id: "training", label: "Train", icon: "T" },
-      { id: "programs", label: "Library", icon: "P" },
+      { id: "programs", label: "Library", icon: "L", libraryCategory: "forms" },
       { id: "my-work", label: "Monitor", icon: "✓" }
     ];
     return `
@@ -2864,8 +2891,9 @@
           <button
             type="button"
             class="${state.view === item.id ? "active" : ""}"
-            data-action="navigate"
+            data-action="${item.libraryCategory ? "open-library" : "navigate"}"
             data-view="${item.id}"
+            ${item.libraryCategory ? `data-category="${item.libraryCategory}"` : ""}
           >
             <span aria-hidden="true">${item.icon}</span>
             <span>${item.label}</span>
@@ -2881,27 +2909,32 @@
     const hasStartableTemplate = data.inspectionTemplates.some((template) =>
       template.published && template.currentVersionId && template.questions > 0
     );
+    const hasAssignableForm = allFormTemplates().some((template) => (
+      formAvailableForSubmission(template)
+      && !(template.fields || []).some((field) => field.databaseType === "file")
+    ));
+    const reviewSourceFormsButton = `<button class="button" type="button" data-action="open-library" data-category="forms" data-mode="archive" data-kind="form_candidate">Review source forms</button>`;
     if (view === "dashboard") return "";
     if (view === "my-work") {
       return `
         <button class="button" type="button" ${canReport ? "" : "disabled"} data-action="open-modal" data-modal="incident">Report incident</button>
-        <button class="button primary" type="button" ${canReport && hasStartableTemplate ? "" : "disabled"} data-action="open-modal" data-modal="inspection">Start inspection</button>
+        ${hasStartableTemplate
+          ? `<button class="button primary" type="button" ${canReport ? "" : "disabled"} data-action="navigate" data-view="inspections">Choose inspection</button>`
+          : reviewSourceFormsButton}
       `;
     }
     if (view === "inspections") {
-      return `
-        <button class="button" type="button" data-action="prototype-action" data-message="Template authoring requires the controlled publication service before it can be enabled.">Create template</button>
-        <button class="button primary" type="button" ${canReport && hasStartableTemplate ? "" : "disabled"} data-action="open-modal" data-modal="inspection">Start inspection</button>
-      `;
+      return hasStartableTemplate
+        ? ""
+        : reviewSourceFormsButton;
     }
     if (view === "committee") {
       return `<button class="button primary" type="button" ${canWriteLocation() ? "" : "disabled"} data-action="open-modal" data-modal="committee">New meeting</button>`;
     }
     if (view === "training") {
-      return `
-        <button class="button" type="button" data-action="prototype-action" data-message="Course authoring will support video, PDF, quiz, and practical verification blocks.">Create course</button>
-        <button class="button primary" type="button" ${canWriteLocation() && data.courses.some((course) => course.published && course.currentVersionId) ? "" : "disabled"} data-action="open-modal" data-modal="training">Assign training</button>
-      `;
+      return data.courses.some((course) => course.published && course.currentVersionId)
+        ? `<button class="button primary" type="button" ${canWriteLocation() ? "" : "disabled"} data-action="open-modal" data-modal="training">Assign training</button>`
+        : `<button class="button" type="button" data-action="open-library" data-category="forms" data-mode="archive" data-kind="training">Review training source files</button>`;
     }
     if (view === "incidents") {
       return `<button class="button primary" type="button" ${canReport ? "" : "disabled"} data-action="open-modal" data-modal="incident">Report incident</button>`;
@@ -2912,12 +2945,12 @@
     if (view === "programs") {
       return `
         ${programLibrary.meta.sourceUrl ? `<a class="button" href="${escapeHtml(programLibrary.meta.sourceUrl)}" target="_blank" rel="noopener noreferrer">Open private source</a>` : ""}
-        <button class="button" type="button" data-action="program-import-status">Review ingestion status</button>
-        <button class="button primary" type="button" data-action="open-modal" data-modal="form-upload" ${localUploadStagingEnabled ? "" : "disabled"} title="${localUploadStagingEnabled ? "Stage a development-only local copy" : "Deploy the private prepare/scan/commit upload service first"}">${localUploadStagingEnabled ? "Stage form locally" : "Upload service required"}</button>
+        <button class="button" type="button" data-action="open-library" data-category="forms" data-mode="archive">Open source files</button>
+        ${localUploadStagingEnabled ? `<button class="button primary" type="button" data-action="open-modal" data-modal="form-upload">Stage form locally</button>` : ""}
       `;
     }
     if (view === "documents") {
-      return `<button class="button primary" type="button" data-action="prototype-action" data-message="The upload workflow will create an immutable document version in private Supabase Storage.">Upload document</button>`;
+      return "";
     }
     if (view === "standards") {
       const jurisdiction = activeLocation() ? jurisdictionForLocation(activeLocation()) : null;
@@ -2945,8 +2978,10 @@
     if (view === "people") {
       return `
         <button class="button" type="button" ${canManageCompany() ? "" : "disabled"} data-action="open-modal" data-modal="employee">Add employee</button>
-        <button class="button primary" type="button" ${canWriteLocation() && data.people.length ? "" : "disabled"} data-action="open-modal" data-modal="employee-form-assignment">Assign form</button>
-        <button class="button" type="button" ${canWriteLocation() && data.people.length ? "" : "disabled"} data-action="open-modal" data-modal="employee-document">Employee PDF</button>
+        ${hasAssignableForm
+          ? `<button class="button primary" type="button" ${canWriteLocation() && data.people.length ? "" : "disabled"} data-action="open-modal" data-modal="employee-form-assignment">Assign employee form</button>`
+          : reviewSourceFormsButton}
+        <button class="button" type="button" ${canWriteLocation() && data.people.length ? "" : "disabled"} data-action="open-modal" data-modal="employee-document">Add employee PDF</button>
       `;
     }
     if (view === "locations") {
@@ -3208,6 +3243,8 @@
           : "Load authorized company forms and programs",
         complete: sourceCount > 0 || (programLibrary.programs || []).length > 0,
         view: "programs",
+        libraryCategory: "forms",
+        libraryMode: "archive",
         actionLabel: "Open library",
         available: true
       },
@@ -3216,10 +3253,13 @@
         label: "Ready-to-use forms",
         detail: publishedForms
           ? `${publishedForms} published interactive form${publishedForms === 1 ? "" : "s"}`
-          : "Choose the first approved original to make operational",
+          : "No operational form is published; source-to-template promotion is the next build step",
         complete: publishedForms > 0,
         view: "programs",
-        actionLabel: "Review forms",
+        libraryCategory: "forms",
+        libraryMode: "archive",
+        libraryKind: "form_candidate",
+        actionLabel: "Review source forms",
         available: true
       },
       {
@@ -3247,7 +3287,7 @@
     const setup = setupJourney();
     if (!setup.next) return "";
     const nextAction = setup.next.view
-      ? `<button class="button small primary" type="button" data-action="navigate" data-view="${setup.next.view}">${escapeHtml(setup.next.actionLabel)}</button>`
+      ? `<button class="button small primary" type="button" data-action="${setup.next.libraryCategory ? "open-library" : "navigate"}" data-view="${setup.next.view}" ${setup.next.libraryCategory ? `data-category="${setup.next.libraryCategory}" data-mode="${setup.next.libraryMode || ""}" data-kind="${setup.next.libraryKind || ""}"` : ""}>${escapeHtml(setup.next.actionLabel)}</button>`
       : `<button class="button small primary" type="button" data-action="open-modal" data-modal="${setup.next.modal}" ${setup.next.available ? "" : "disabled"}>${escapeHtml(setup.next.actionLabel)}</button>`;
     return `
       <section class="setup-journey" aria-labelledby="setup-journey-title">
@@ -3285,21 +3325,26 @@
     const startableInspections = data.inspectionTemplates.filter((template) => (
       template.published && template.currentVersionId && template.questions > 0
     ));
-    const assignableForms = allFormTemplates().filter(formAvailableForSubmission);
+    const assignableForms = allFormTemplates().filter((template) => (
+      formAvailableForSubmission(template)
+      && !(template.fields || []).some((field) => field.databaseType === "file")
+    ));
     const actions = [
       {
-        icon: "F",
-        title: "Start a form",
-        detail: startableInspections.length ? `${startableInspections.length} inspection form${startableInspections.length === 1 ? "" : "s"} ready` : "No inspection form is published yet",
-        modal: "inspection",
-        enabled: canReport && startableInspections.length > 0
+        icon: "I",
+        title: startableInspections.length ? "Start inspection" : "Review inspection sources",
+        detail: startableInspections.length ? `${startableInspections.length} inspection form${startableInspections.length === 1 ? "" : "s"} ready` : "Review source forms before publication",
+        ...(startableInspections.length
+          ? { view: "inspections", enabled: canReport }
+          : { view: "programs", libraryCategory: "forms", libraryMode: "archive", libraryKind: "form_candidate", enabled: true })
       },
       {
         icon: "E",
-        title: "Assign employee form",
-        detail: assignableForms.length ? "Prepare a secure tablet handoff" : "Publish an interactive form first",
-        modal: "employee-form-assignment",
-        enabled: canOperate && data.people.length > 0 && assignableForms.length > 0
+        title: assignableForms.length ? "Assign employee form" : "Review employee-form sources",
+        detail: assignableForms.length ? "Prepare a secure tablet handoff" : "Review source forms before publication",
+        ...(assignableForms.length
+          ? { modal: "employee-form-assignment", enabled: canOperate && data.people.length > 0 }
+          : { view: "programs", libraryCategory: "forms", libraryMode: "archive", libraryKind: "form_candidate", enabled: true })
       },
       {
         icon: "!",
@@ -3317,18 +3362,21 @@
       },
       {
         icon: "T",
-        title: "Assign training",
+        title: data.courses.some((course) => course.published && course.currentVersionId) ? "Assign training" : "Review training sources",
         detail: data.courses.some((course) => course.published && course.currentVersionId)
           ? "Send required training to an employee"
-          : "Publish a training course first",
-        modal: "training",
-        enabled: canOperate && data.courses.some((course) => course.published && course.currentVersionId)
+          : "Review training sources before publication",
+        ...(data.courses.some((course) => course.published && course.currentVersionId)
+          ? { modal: "training", enabled: canOperate }
+          : { view: "programs", libraryCategory: "forms", libraryMode: "archive", libraryKind: "training", enabled: true })
       },
       {
-        icon: "P",
-        title: "Open forms library",
+        icon: "L",
+        title: "Open company forms",
         detail: `${Number(programLibrary.meta?.counts?.importCandidates || 0)} source files organized by folder`,
         view: "programs",
+        libraryCategory: "forms",
+        libraryMode: "archive",
         enabled: true
       }
     ];
@@ -3342,8 +3390,12 @@
             <button
               class="quick-action"
               type="button"
-              data-action="${action.view ? "navigate" : "open-modal"}"
-              ${action.view ? `data-view="${action.view}"` : `data-modal="${action.modal}"`}
+              data-action="${action.libraryCategory ? "open-library" : action.view ? "navigate" : "open-modal"}"
+              ${action.libraryCategory
+                ? `data-view="${action.view}" data-category="${action.libraryCategory}" data-mode="${action.libraryMode || ""}" data-kind="${action.libraryKind || "all"}"`
+                : action.view
+                  ? `data-view="${action.view}"`
+                  : `data-modal="${action.modal}"`}
               ${action.enabled ? "" : "disabled"}
             >
               <span class="quick-action-icon" aria-hidden="true">${action.icon}</span>
@@ -3558,28 +3610,26 @@
 
   function renderInspections() {
     const inspections = filterLocation(data.inspections);
+    const categories = [...new Set(data.inspectionTemplates.map((template) => template.category).filter(Boolean))]
+      .sort((left, right) => left.localeCompare(right));
+    const templates = data.inspectionTemplates.filter((template) => (
+      state.inspectionCategory === "all" || template.category === state.inspectionCategory
+    ));
     return `
       ${renderPageHeading()}
       <div class="toolbar">
-        <div class="tabs" aria-label="Inspection views">
-          <button class="tab active" type="button">Templates</button>
-          <button class="tab" type="button" data-action="prototype-action" data-message="Scheduled work will support recurring rules, shift windows, and grace periods.">Scheduled</button>
-          <button class="tab" type="button" data-action="prototype-action" data-message="Submitted inspections will preserve the exact template version and signed evidence.">Submitted</button>
-        </div>
-        <select class="filter-select" aria-label="Filter inspection category">
-          <option>All categories</option>
-          <option>General</option>
-          <option>Pre-task</option>
-          <option>Equipment</option>
-          <option>Emergency</option>
+        <strong>Inspection templates</strong>
+        <select id="inspection-category" class="filter-select" aria-label="Filter inspection category">
+          <option value="all" ${state.inspectionCategory === "all" ? "selected" : ""}>All categories</option>
+          ${categories.map((category) => `<option value="${escapeHtml(category)}" ${state.inspectionCategory === category ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}
         </select>
       </div>
       <section class="template-grid" aria-label="Inspection templates">
-        ${data.inspectionTemplates.map((template) => `
+        ${templates.map((template) => `
           <article class="template-card">
             <div class="template-top">
               <span class="category-badge">${escapeHtml(template.category)}</span>
-              <button class="icon-button" type="button" data-action="prototype-action" data-message="Template version history and assignment settings will open here." aria-label="Open template menu">•••</button>
+              ${statusPill(template.published ? "Published" : "Draft", template.published ? "green" : "amber")}
             </div>
             <h3>${escapeHtml(template.name)}</h3>
             <p>${template.questions} response items · ${escapeHtml(template.frequency)}</p>
@@ -3593,13 +3643,13 @@
               <button class="button small primary" type="button" ${!isReadOnlyAuditor() && template.published && template.currentVersionId && template.questions > 0 ? "" : "disabled"} data-action="open-modal" data-modal="inspection" data-template-id="${template.id}">Start</button>
             </div>
           </article>
-        `).join("") || renderEmptyState("F", "No inspection templates", "Create and publish the first versioned template before scheduling field work.")}
+        `).join("") || renderEmptyState("F", "No published inspection templates", "Review the company source forms in the library. A controlled source-to-template publication workflow is still required before field use.")}
       </section>
       <div style="height:17px"></div>
       <section class="table-card">
         <div class="table-header">
           <h2>Latest inspections</h2>
-          <button class="link-button" type="button" data-action="prototype-action" data-message="A full inspection register will support saved views, exports, and audit history.">Open register →</button>
+          <span>${inspections.length} record${inspections.length === 1 ? "" : "s"}</span>
         </div>
         <div class="table-scroll">
           <table>
@@ -3701,13 +3751,14 @@
   function renderTraining() {
     const people = filterLocation(data.people);
     const assignments = filterLocation(data.trainingAssignments);
-    const avg = average(people.map((person) => person.training));
+    const measuredPeople = people.filter((person) => person.trainingAssigned > 0);
+    const avg = average(measuredPeople.map((person) => person.training));
     const assignmentsDue = filterLocation(data.tasks).filter((task) => task.type === "Training").length;
     const credentialsExpiring = people.filter((person) => ["Due soon", "Expired"].includes(person.status)).length;
     return `
       ${renderPageHeading()}
       <section class="split-summary">
-        <article class="summary-card"><span>Training current</span><strong>${avg}%</strong></article>
+        <article class="summary-card"><span>Training current</span><strong>${measuredPeople.length ? `${avg}%` : "Not measured"}</strong></article>
         <article class="summary-card"><span>Assignments due</span><strong>${assignmentsDue}</strong></article>
         <article class="summary-card"><span>Credentials expiring</span><strong>${credentialsExpiring}</strong></article>
       </section>
@@ -3727,10 +3778,10 @@
             </div>
             <div class="card-footer">
               <small>Due ${escapeHtml(course.due)}</small>
-              <button class="button small" type="button" ${course.published ? "" : "disabled"} data-action="open-modal" data-modal="training" data-course-id="${course.id}">Assign</button>
+              <button class="button small" type="button" ${course.published && course.currentVersionId ? "" : "disabled"} data-action="open-modal" data-modal="training" data-course-id="${course.id}">Assign</button>
             </div>
           </article>
-        `).join("") || renderEmptyState("T", "No training courses", "Create and publish a course before assigning training.")}
+        `).join("") || renderEmptyState("T", "No published training courses", "Review training source files in the company library. Course authoring and controlled publication are not enabled yet.")}
       </section>
       <div style="height:17px"></div>
       <section class="table-card">
@@ -3753,8 +3804,8 @@
                   <td>${escapeHtml(locationName(person.locationId))}</td>
                   <td>
                     <div class="training-progress">
-                      <strong>${person.training}% complete</strong>
-                      <div class="progress"><span style="--progress:${person.training}%;--progress-color:${person.training < 85 ? "var(--amber)" : "var(--accent)"}"></span></div>
+                      <strong>${person.trainingAssigned ? `${person.training}% complete` : "Not measured"}</strong>
+                      ${person.trainingAssigned ? `<div class="progress"><span style="--progress:${person.training}%;--progress-color:${person.training < 85 ? "var(--amber)" : "var(--accent)"}"></span></div>` : ""}
                     </div>
                   </td>
                   <td>${escapeHtml(person.credentials)}</td>
@@ -3796,33 +3847,34 @@
     const incidents = filterLocation(data.incidents);
     const open = incidents.filter((incident) => incident.status !== "Closed");
     const closed = incidents.filter((incident) => incident.status === "Closed");
-    const medianCloseDays = closed.length
-      ? [...closed].sort((a, b) => a.daysOpen - b.daysOpen)[Math.floor((closed.length - 1) / 2)].daysOpen
-      : null;
+    const filteredIncidents = incidents.filter((incident) => (
+      state.incidentStatus === "all" || incident.status === state.incidentStatus
+    ));
+    const incidentStatuses = [...new Set(incidents.map((incident) => incident.status).filter(Boolean))]
+      .sort((left, right) => left.localeCompare(right));
+    const lastThirtyDays = Date.now() - 30 * 86_400_000;
     return `
       ${renderPageHeading()}
       <section class="split-summary">
         <article class="summary-card"><span>Open investigations</span><strong>${open.length}</strong></article>
-        <article class="summary-card"><span>Near misses · 30 days</span><strong>${incidents.filter((incident) => incident.type === "Near miss").length}</strong></article>
-        <article class="summary-card"><span>Median days to close</span><strong>${medianCloseDays ?? "—"}</strong></article>
+        <article class="summary-card"><span>Near misses · 30 days</span><strong>${incidents.filter((incident) => incident.type === "Near miss" && new Date(incident.occurredAt).getTime() >= lastThirtyDays).length}</strong></article>
+        <article class="summary-card"><span>Closed records</span><strong>${closed.length}</strong></article>
       </section>
       <section class="table-card">
         <div class="table-header">
           <h2>Incident register</h2>
-          <select class="filter-select" aria-label="Filter incident status">
-            <option>All statuses</option>
-            <option>Open</option>
-            <option>Investigation</option>
-            <option>Closed</option>
+          <select id="incident-status" class="filter-select" aria-label="Filter incident status">
+            <option value="all" ${state.incidentStatus === "all" ? "selected" : ""}>All statuses</option>
+            ${incidentStatuses.map((status) => `<option value="${escapeHtml(status)}" ${state.incidentStatus === status ? "selected" : ""}>${escapeHtml(status)}</option>`).join("")}
           </select>
         </div>
         <div class="table-scroll">
           <table>
             <thead><tr><th>Incident</th><th>Location</th><th>Type</th><th>Reported</th><th>Severity</th><th>Status</th></tr></thead>
             <tbody>
-              ${incidents.map((incident) => `
+              ${filteredIncidents.map((incident) => `
                 <tr>
-                  <td class="primary-cell">${escapeHtml(incident.title)}<span class="secondary-line">${incident.id} · ${incident.daysOpen} day${incident.daysOpen === 1 ? "" : "s"} open</span></td>
+                  <td class="primary-cell">${escapeHtml(incident.title)}<span class="secondary-line">${incident.id}${incident.status === "Closed" ? " · closed" : ` · ${incident.daysOpen} day${incident.daysOpen === 1 ? "" : "s"} open`}</span></td>
                   <td>${escapeHtml(locationName(incident.locationId))}</td>
                   <td>${escapeHtml(incident.type)}</td>
                   <td>${escapeHtml(incident.date)}<span class="secondary-line">${escapeHtml(incident.reportedBy)}</span></td>
@@ -3839,27 +3891,39 @@
 
   function renderActions() {
     const actions = filterLocation(data.actions);
+    const priorityRank = { Critical: 0, High: 1, Medium: 2, Low: 3 };
+    const sortedActions = [...actions].sort((left, right) => {
+      if (state.actionSort === "due") {
+        return (new Date(left.dueAt).getTime() || Number.MAX_SAFE_INTEGER) - (new Date(right.dueAt).getTime() || Number.MAX_SAFE_INTEGER);
+      }
+      if (state.actionSort === "owner") return String(left.owner || "").localeCompare(String(right.owner || ""));
+      return (priorityRank[left.priority] ?? 9) - (priorityRank[right.priority] ?? 9)
+        || (new Date(left.dueAt).getTime() || Number.MAX_SAFE_INTEGER) - (new Date(right.dueAt).getTime() || Number.MAX_SAFE_INTEGER);
+    });
+    const overdueActions = actions.filter((action) => (
+      action.status !== "Closed" && action.dueAt && new Date(action.dueAt).getTime() < Date.now()
+    ));
     return `
       ${renderPageHeading()}
       <section class="split-summary">
         <article class="summary-card"><span>Open</span><strong>${actions.filter((action) => action.status !== "Closed").length}</strong></article>
-        <article class="summary-card"><span>Overdue</span><strong>${actions.filter((action) => action.status === "Overdue").length}</strong></article>
+        <article class="summary-card"><span>Overdue</span><strong>${overdueActions.length}</strong></article>
         <article class="summary-card"><span>Critical / high</span><strong>${actions.filter((action) => ["Critical", "High"].includes(action.priority)).length}</strong></article>
       </section>
       <section class="table-card">
         <div class="table-header">
           <h2>Corrective action register</h2>
-          <select class="filter-select" aria-label="Sort corrective actions">
-            <option>Priority first</option>
-            <option>Due date</option>
-            <option>Owner</option>
+          <select id="action-sort" class="filter-select" aria-label="Sort corrective actions">
+            <option value="priority" ${state.actionSort === "priority" ? "selected" : ""}>Priority first</option>
+            <option value="due" ${state.actionSort === "due" ? "selected" : ""}>Due date</option>
+            <option value="owner" ${state.actionSort === "owner" ? "selected" : ""}>Owner</option>
           </select>
         </div>
         <div class="table-scroll">
           <table>
             <thead><tr><th>Action</th><th>Source</th><th>Location</th><th>Owner</th><th>Due</th><th>Priority</th><th>Status</th></tr></thead>
             <tbody>
-              ${actions.map((action) => `
+              ${sortedActions.map((action) => `
                 <tr>
                   <td class="primary-cell">${escapeHtml(action.title)}${renderCitationChips("corrective_action", action.id)}</td>
                   <td>${escapeHtml(action.source)}</td>
@@ -3903,6 +3967,32 @@
 
   function originalFormTemplates() {
     return allFormTemplates().filter((item) => item.originalFile?.id);
+  }
+
+  function preferredFormLibraryMode() {
+    if (isSignedInCompanyMember() && importCandidateRows().length) return "archive";
+    if (originalFormTemplates().length) return "originals";
+    return "templates";
+  }
+
+  function openLibrary(category = "forms", options = {}) {
+    const allowedCategories = new Set(["programs", "forms", "folders", "translations", "resources"]);
+    state.programCategory = allowedCategories.has(category) ? category : "forms";
+    state.programQuery = String(options.query || "");
+    if (state.programCategory === "forms") {
+      const allowedModes = new Set(["originals", "archive", "templates"]);
+      state.formLibraryMode = allowedModes.has(options.mode)
+        ? options.mode
+        : preferredFormLibraryMode();
+      state.formArchiveKind = options.kind && importCandidateKinds.some((item) => item.id === options.kind)
+        ? options.kind
+        : "all";
+      state.formArchiveStatus = "all";
+      localStorage.setItem(`${uiStoragePrefix}formsMode`, state.formLibraryMode);
+      localStorage.setItem(`${uiStoragePrefix}formArchiveKind`, state.formArchiveKind);
+      localStorage.setItem(`${uiStoragePrefix}formArchiveStatus`, state.formArchiveStatus);
+    }
+    navigate("programs");
   }
 
   const importCandidateKinds = [
@@ -4618,14 +4708,14 @@
     if (state.programCategory !== "forms") return "";
     const archiveRows = importCandidateRows();
     const modes = [
-      { id: "originals", label: "Original forms", count: originalFormTemplates().length },
+      { id: "originals", label: "Published originals", count: originalFormTemplates().length },
       ...(isSignedInCompanyMember()
-        ? [{ id: "archive", label: canManageCompany() ? "Drive archive review" : "Company originals", count: archiveRows.length }]
+        ? [{ id: "archive", label: canManageCompany() ? "Source review" : "Company source files", count: archiveRows.length }]
         : []),
       ...(localUploadStagingEnabled
         ? [{ id: "uploads", label: "Local staging", count: state.localFormUploads.length }]
         : []),
-      { id: "templates", label: "Templates", count: allFormTemplates().length }
+      { id: "templates", label: "Ready-to-use forms", count: allFormTemplates().filter(formAvailableForSubmission).length }
     ];
     const archivePdfRows = archiveRows.filter(isPdfImportCandidate);
     const archiveVerifiedPdfRows = archivePdfRows.filter(isVerifiedPdfImportCandidate);
@@ -4633,11 +4723,11 @@
     const reviewStatuses = [...new Set(archiveRows.map((item) => item.reviewStatus).filter(Boolean))]
       .sort((left, right) => left.localeCompare(right));
     const archiveControls = state.formLibraryMode === "archive" ? `
-      <section class="import-archive-review" aria-labelledby="drive-archive-review-title">
+      <section class="import-archive-review" aria-labelledby="source-review-title">
         <div class="import-archive-summary">
           <div>
             <p class="section-kicker">${canManageCompany() ? "Safety source access and review" : "Signed-in company source library"}</p>
-            <h3 id="drive-archive-review-title">${canManageCompany() ? "Drive archive review" : "Company originals"}</h3>
+            <h3 id="source-review-title">${canManageCompany() ? "Source review" : "Company source files"}</h3>
             <p>${archiveRows.length} source item${archiveRows.length === 1 ? "" : "s"} · ${archiveVerifiedPdfRows.length} verified original PDF${archiveVerifiedPdfRows.length === 1 ? "" : "s"} · ${archivePageCount} verified PDF page${archivePageCount === 1 ? "" : "s"}</p>
             <p>Originals follow their Company access or Safety/admin private setting. Company access is limited to authenticated company members; original files are never public.</p>
           </div>
@@ -4683,13 +4773,13 @@
             >${escapeHtml(mode.label)} <span>${mode.count}</span></button>
           `).join("")}
         </div>
-        <button class="button primary" type="button" data-action="open-modal" data-modal="form-upload" ${localUploadStagingEnabled ? "" : "disabled"} title="${localUploadStagingEnabled ? "Stage a development-only local copy" : "Deploy the private prepare/scan/commit upload service first"}>${localUploadStagingEnabled ? "Stage form locally" : "Upload service required"}</button>
+        ${localUploadStagingEnabled ? `<button class="button primary" type="button" data-action="open-modal" data-modal="form-upload" title="Stage a development-only local copy">Stage form locally</button>` : ""}
       </div>
       <div class="form-storage-boundary">
         <strong>${state.formLibraryMode === "uploads"
           ? "Development-only local staging"
           : state.formLibraryMode === "archive"
-            ? "Private Drive source snapshots"
+            ? "Private source snapshots"
             : "Controlled form library"}</strong>
         <span>${state.formLibraryMode === "uploads"
           ? "Uploads stay in this browser only. Production uses a private Supabase bucket, tenant RLS, malware scanning, and short-lived signed URLs."
@@ -4707,30 +4797,36 @@
     const categories = [
       { id: "programs", label: "Programs", icon: "P", count: (programLibrary.programs || []).length },
       { id: "forms", label: "Forms", icon: "F", count: allFormTemplates().length + state.localFormUploads.length + archiveRows.length },
-      { id: "folders", label: "Source folders", icon: "D", count: (programLibrary.folders || []).filter((item) => item.language !== "Spanish").length },
-      { id: "translations", label: "Spanish", icon: "ES", count: (programLibrary.folders || []).filter((item) => item.language === "Spanish").length },
-      { id: "resources", label: "Resources", icon: "R", count: (programLibrary.looseResources || []).length }
+      ...((programLibrary.folders || []).some((item) => item.language !== "Spanish")
+        ? [{ id: "folders", label: "Source folders", icon: "D", count: (programLibrary.folders || []).filter((item) => item.language !== "Spanish").length }]
+        : []),
+      ...((programLibrary.folders || []).some((item) => item.language === "Spanish")
+        ? [{ id: "translations", label: "Spanish", icon: "ES", count: (programLibrary.folders || []).filter((item) => item.language === "Spanish").length }]
+        : []),
+      ...((programLibrary.looseResources || []).length
+        ? [{ id: "resources", label: "Resources", icon: "R", count: (programLibrary.looseResources || []).length }]
+        : [])
     ];
+    if (!categories.some((category) => category.id === state.programCategory)) state.programCategory = "forms";
     const rows = filteredProgramRows();
     const submissions = data.programSubmissions || [];
     const indexedItems = (programLibrary.folders || []).reduce((sum, folder) => sum + Number(folder.itemCount || 0), 0);
     const extraction = programLibrary.meta.extraction || { extracted: 0, imageOnly: 0, ocrRequired: 0 };
     const hasTenantLibrary = programLibraryItems().length > 0 || archiveRows.length > 0;
     const formModeLabel = {
-      originals: "Original forms",
-      archive: canManageCompany() ? "Drive archive review" : "Company originals",
+      originals: "Published originals",
+      archive: canManageCompany() ? "Source review" : "Company source files",
       uploads: "Local staging",
-      templates: "Interactive templates"
+      templates: "Ready-to-use forms"
     }[state.formLibraryMode] || "Forms";
 
     return `
       ${renderPageHeading()}
       <section class="split-summary">
         <article class="summary-card"><span>Company programs</span><strong>${(programLibrary.programs || []).length}</strong></article>
-        <article class="summary-card"><span>Original form PDFs</span><strong>${originalFormTemplates().length}</strong></article>
-        <article class="summary-card"><span>Interactive templates</span><strong>${allFormTemplates().length}</strong></article>
-        <article class="summary-card"><span>Submitted forms</span><strong>${submissions.filter((item) => item.status === "Submitted").length}</strong></article>
-        ${isSignedInCompanyMember() ? `<article class="summary-card"><span>${canManageCompany() ? "Drive archive items" : "Company originals"}</span><strong>${archiveRows.length}</strong></article>` : ""}
+        <article class="summary-card"><span>Source files</span><strong>${archiveRows.length}</strong></article>
+        <article class="summary-card"><span>Ready-to-use forms</span><strong>${allFormTemplates().filter(formAvailableForSubmission).length}</strong></article>
+        <article class="summary-card"><span>Completed form records</span><strong>${submissions.filter((item) => item.status === "Submitted").length + data.employeeFormSubmissions.length}</strong></article>
       </section>
       <div style="height:14px"></div>
       ${hasTenantLibrary ? `<section class="import-status running" aria-label="Safety program ingestion status">
@@ -4957,7 +5053,7 @@
             ` : item.sourceUrl ? `<a class="button" href="${escapeHtml(item.sourceUrl)}" target="_blank" rel="noopener noreferrer">Open source</a>` : ""}
             ${isForm
               ? `<button class="button primary" type="button" data-action="start-program-form" data-form-id="${escapeHtml(item.id)}" ${formAvailableForSubmission(item) ? "" : "disabled"}>Start digital form</button>`
-              : `<button class="button primary" type="button" data-action="assign-program" data-program-id="${escapeHtml(item.id)}" ${item.programStatus === "published" && (item.locations || []).some((locationId) => canWriteLocation(locationId)) ? "" : "disabled"}>Assign to me</button>`}
+              : statusPill(item.programStatus === "published" ? "Published" : "Publication review required", item.programStatus === "published" ? "green" : "amber")}
           </footer>
         </aside>
       </div>
@@ -5171,6 +5267,11 @@
     const awaitingAcknowledgement = data.documents.filter((documentRecord) =>
       documentRecord.acknowledgementRequired && documentRecord.acknowledgement !== 100
     ).length;
+    const documentTypes = [...new Set(data.documents.map((documentRecord) => documentRecord.type).filter(Boolean))]
+      .sort((left, right) => left.localeCompare(right));
+    const documents = data.documents.filter((documentRecord) => (
+      state.documentType === "all" || documentRecord.type === state.documentType
+    ));
     const reviewWindowEnd = Date.now() + 90 * 86_400_000;
     const reviewsDue = data.documents.filter((documentRecord) => {
       const reviewDate = new Date(documentRecord.review).getTime();
@@ -5180,24 +5281,22 @@
       ${renderPageHeading()}
       <section class="split-summary">
         <article class="summary-card"><span>Controlled documents</span><strong>${data.documents.length}</strong></article>
-        <article class="summary-card"><span>My acknowledgements due</span><strong>${awaitingAcknowledgement}</strong></article>
+        <article class="summary-card"><span>Acknowledgements awaiting reader</span><strong>${awaitingAcknowledgement}</strong></article>
         <article class="summary-card"><span>Reviews due · 90 days</span><strong>${reviewsDue}</strong></article>
       </section>
       <section class="table-card">
         <div class="table-header">
           <h2>Controlled document library</h2>
-          <select class="filter-select" aria-label="Filter document type">
-            <option>All document types</option>
-            <option>Policy</option>
-            <option>Program</option>
-            <option>Procedure</option>
+          <select id="document-type" class="filter-select" aria-label="Filter document type">
+            <option value="all" ${state.documentType === "all" ? "selected" : ""}>All document types</option>
+            ${documentTypes.map((type) => `<option value="${escapeHtml(type)}" ${state.documentType === type ? "selected" : ""}>${escapeHtml(type)}</option>`).join("")}
           </select>
         </div>
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Document</th><th>Type</th><th>Owner</th><th>Review date</th><th>Your acknowledgement</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Document</th><th>Type</th><th>Owner</th><th>Review date</th><th>Your acknowledgement</th><th>Status</th><th>Access</th></tr></thead>
             <tbody>
-              ${data.documents.map((documentRecord) => `
+              ${documents.map((documentRecord) => `
                 <tr>
                   <td class="primary-cell">
                     ${escapeHtml(documentRecord.name)}
@@ -5218,39 +5317,41 @@
                       `}
                   </td>
                   <td>${statusPill(documentRecord.status)}</td>
-                  <td><button class="button small" type="button" ${isReadOnlyAuditor() || documentRecord.acknowledgement === null || documentRecord.acknowledgement === 100 ? "disabled" : ""} data-action="acknowledge-document" data-document-id="${documentRecord.id}">${documentRecord.acknowledgement === 100 ? "Acknowledged" : "Acknowledge"}</button></td>
+                  <td>${documentRecord.acknowledgement === 100 ? statusPill("Acknowledged", "green") : `<span class="secondary-line">Reader required</span>`}</td>
                 </tr>
-              `).join("") || `<tr><td colspan="7">${renderEmptyState("D", "No controlled documents", "Upload and publish the first company document to begin the controlled library.")}</td></tr>`}
+              `).join("") || `<tr><td colspan="7">${renderEmptyState("D", "No controlled documents", "The controlled document publication and reader service is not enabled yet. Company source files remain available in the library.")}</td></tr>`}
             </tbody>
           </table>
         </div>
       </section>
       <div style="height:14px"></div>
       <div class="prototype-note">
-        <strong>Access design</strong>
-        <span>Location classification and document permission are modeled separately. A document can belong to one site without automatically becoming visible to every worker at that site.</span>
+        <strong>Read before acknowledgement</strong>
+        <span>Acknowledgement is intentionally unavailable until SafetyOps can open the exact controlled version and record that reading step. Location classification and document permission remain separate.</span>
       </div>
     `;
   }
 
   function renderPeople() {
-    const people = filterLocation(data.people);
+    const locationPeople = filterLocation(data.people);
+    const readinessStates = [...new Set(locationPeople.map((person) => person.status).filter(Boolean))]
+      .sort((left, right) => left.localeCompare(right));
+    const people = locationPeople.filter((person) => (
+      state.peopleReadiness === "all" || person.status === state.peopleReadiness
+    ));
     return `
       ${renderPageHeading()}
       <section class="split-summary">
         <article class="summary-card"><span>Active workers</span><strong>${activeLocation() ? activeLocation().people : data.company.activeWorkers}</strong></article>
-        <article class="summary-card"><span>Employee forms pending</span><strong>${people.reduce((sum, person) => sum + person.pendingDocuments, 0)}</strong></article>
-        <article class="summary-card"><span>Training / credential attention</span><strong>${people.filter((person) => person.status !== "Current").length}</strong></article>
+        <article class="summary-card"><span>Employee forms pending</span><strong>${locationPeople.reduce((sum, person) => sum + person.pendingDocuments, 0)}</strong></article>
+        <article class="summary-card"><span>Training / credential attention</span><strong>${locationPeople.filter((person) => !["Current", "Not measured"].includes(person.status)).length}</strong></article>
       </section>
       <section class="table-card">
         <div class="table-header">
           <h2>Worker directory</h2>
-          <select class="filter-select" aria-label="Filter worker readiness">
-            <option>All readiness states</option>
-            <option>Current</option>
-            <option>Training due</option>
-            <option>Credential due soon</option>
-            <option>Expired</option>
+          <select id="people-readiness" class="filter-select" aria-label="Filter worker readiness">
+            <option value="all" ${state.peopleReadiness === "all" ? "selected" : ""}>All readiness states</option>
+            ${readinessStates.map((status) => `<option value="${escapeHtml(status)}" ${state.peopleReadiness === status ? "selected" : ""}>${escapeHtml(status)}</option>`).join("")}
           </select>
         </div>
         <div class="table-scroll">
@@ -5268,8 +5369,8 @@
                   <td>${escapeHtml(locationName(person.locationId))}</td>
                   <td>
                     <div class="training-progress">
-                      <strong>${person.training}%</strong>
-                      <div class="progress"><span style="--progress:${person.training}%;--progress-color:${person.training < 85 ? "var(--amber)" : "var(--accent)"}"></span></div>
+                      <strong>${person.trainingAssigned ? `${person.training}%` : "Not measured"}</strong>
+                      ${person.trainingAssigned ? `<div class="progress"><span style="--progress:${person.training}%;--progress-color:${person.training < 85 ? "var(--amber)" : "var(--accent)"}"></span></div>` : ""}
                     </div>
                   </td>
                   <td>${person.documentCount} record${person.documentCount === 1 ? "" : "s"}<span class="secondary-line">${person.pendingDocuments} awaiting completion</span></td>
@@ -5304,6 +5405,12 @@
       ["assigned", "in_progress"].includes(assignment.rawStatus)
     );
     const retainedCompletions = assignments.filter((assignment) => assignment.completion).length;
+    const hasAssignableCourse = data.courses.some((course) => course.published && course.currentVersionId);
+    const hasAssignableForm = allFormTemplates().some((template) => (
+      formAvailableForSubmission(template)
+      && template.locations?.includes(person.locationId)
+      && !(template.fields || []).some((field) => field.databaseType === "file")
+    ));
     return `
       <div class="program-drawer-backdrop" data-action="backdrop-close-employee"></div>
       <aside class="employee-record-drawer" role="dialog" aria-modal="true" aria-labelledby="employee-record-title">
@@ -5326,8 +5433,12 @@
             <article><span>Employee records</span><strong>${employeeDocuments.length + employeeForms.length}</strong></article>
           </section>
           <div class="row-actions">
-            <button class="button small" type="button" ${canWriteLocation(person.locationId) ? "" : "disabled"} data-action="open-modal" data-modal="training" data-employee-id="${person.id}">Assign training</button>
-            <button class="button small primary" type="button" ${canWriteLocation(person.locationId) ? "" : "disabled"} data-action="open-modal" data-modal="employee-form-assignment" data-employee-id="${person.id}">Assign employee form</button>
+            ${hasAssignableCourse
+              ? `<button class="button small" type="button" ${canWriteLocation(person.locationId) ? "" : "disabled"} data-action="open-modal" data-modal="training" data-employee-id="${person.id}">Assign training</button>`
+              : `<button class="button small" type="button" data-action="open-library" data-category="forms" data-mode="archive" data-kind="training">Review training sources</button>`}
+            ${hasAssignableForm
+              ? `<button class="button small primary" type="button" ${canWriteLocation(person.locationId) ? "" : "disabled"} data-action="open-modal" data-modal="employee-form-assignment" data-employee-id="${person.id}">Assign employee form</button>`
+              : `<button class="button small" type="button" data-action="open-library" data-category="forms" data-mode="archive" data-kind="form_candidate">Review source forms</button>`}
             <button class="button small" type="button" ${canWriteLocation(person.locationId) ? "" : "disabled"} data-action="open-modal" data-modal="employee-document" data-employee-id="${person.id}" data-document-kind="signature_request">Request PDF acknowledgement</button>
             <button class="button small" type="button" ${canWriteLocation(person.locationId) ? "" : "disabled"} data-action="open-modal" data-modal="employee-document" data-employee-id="${person.id}" data-document-kind="signed_upload">Upload signed PDF</button>
           </div>
@@ -5355,8 +5466,8 @@
                 <div class="employee-document-row">
                   <div>
                     <strong>${escapeHtml(assignment.title)}</strong>
-                    <span>${escapeHtml(assignment.formTitle)} Â· due ${escapeHtml(assignment.due)}</span>
-                    ${assignment.submission ? `<span class="secondary-line">Submission SHA-256 Â· <code>${escapeHtml(assignment.submission.submissionSha256.slice(0, 16))}â€¦</code></span>` : ""}
+                    <span>${escapeHtml(assignment.formTitle)} · due ${escapeHtml(assignment.due)}</span>
+                    ${assignment.submission ? `<span class="secondary-line">Submission SHA-256 · <code>${escapeHtml(assignment.submission.submissionSha256.slice(0, 16))}…</code></span>` : ""}
                   </div>
                   <div class="row-actions">
                     ${statusPill(assignment.status)}
@@ -5870,7 +5981,7 @@
         <article class="settings-card">
           <p class="section-kicker">Data & identity</p>
           <h3>Supabase connection</h3>
-          <p>The production app will use Supabase Auth, Postgres, Row Level Security, private Storage, and Edge Functions for privileged jobs.</p>
+          <p>The production app uses Supabase Auth, Postgres, Row Level Security, private Storage, and Edge Functions for privileged jobs.</p>
           <div class="setting-row">
             <div><strong>Browser client</strong><span>${supabaseClient ? "Configured with a publishable key" : "Connection required · add project URL and publishable key"}</span></div>
             ${statusPill(supabaseClient ? "Ready" : "Not configured", supabaseClient ? "green" : "amber")}
@@ -5894,11 +6005,11 @@
           </div>
           <div class="setting-row">
             <div><strong>Daily digest</strong><span>Overdue work and expiring credentials</span></div>
-            <button class="switch on" type="button" data-action="prototype-action" data-message="Notification preferences will be saved per user in Supabase."></button>
+            ${statusPill("Not enabled", "amber")}
           </div>
           <div class="setting-row">
             <div><strong>Require photo on failed inspection</strong><span>Company-wide inspection rule</span></div>
-            <button class="switch on" type="button" data-action="prototype-action" data-message="This will become a versioned organization policy."></button>
+            ${statusPill("Not enabled", "amber")}
           </div>
         </article>
         <article class="settings-card">
@@ -5928,14 +6039,15 @@
     const results = [];
     const sources = [
       { type: "Location", rows: data.locations, fields: ["name", "city", "type"], view: "locations" },
-      { type: "Person", rows: data.people, fields: ["name", "role", "status"], view: "people" },
+      { type: "Person", rows: data.people, fields: ["name", "role", "status"], view: "people", recordAction: "open-employee" },
       { type: "Inspection template", rows: data.inspectionTemplates, fields: ["name", "category"], view: "inspections" },
       { type: "Training", rows: data.courses, fields: ["name", "category", "format"], view: "training" },
       { type: "Incident", rows: data.incidents, fields: ["title", "type", "severity", "status"], view: "incidents" },
       { type: "Corrective action", rows: data.actions, fields: ["title", "source", "owner", "status"], view: "actions" },
       { type: "Document", rows: data.documents, fields: ["name", "type", "owner", "status"], view: "documents" },
-      { type: "Safety program", rows: programLibrary.programs || [], fields: ["title", "sourceName", "description", "topics", "citations"], view: "programs" },
-      { type: "Digital form", rows: programLibrary.forms || [], fields: ["title", "sourceName", "category", "citations"], view: "programs" },
+      { type: "Safety program", rows: programLibrary.programs || [], fields: ["title", "sourceName", "description", "topics", "citations"], view: "programs", libraryCategory: "programs" },
+      { type: "Digital form", rows: programLibrary.forms || [], fields: ["title", "sourceName", "category", "citations"], view: "programs", libraryCategory: "forms", libraryMode: "templates" },
+      { type: "Company source file", rows: programLibrary.importCandidates || [], fields: ["displayName", "folderHint", "candidateKind", "language", "contentSha256"], view: "programs", libraryCategory: "forms", libraryMode: "archive", kindField: "archiveKind" },
       { type: "Source folder", rows: programLibrary.folders || [], fields: ["title", "category", "children", "language"], view: "programs" },
       { type: "OSHA standard", rows: allStandards(), fields: ["citation", "identifier", "title", "partTitle", "groupCode", "authority", "jurisdiction", "scope", "summary", "topics"], view: "standards" }
     ];
@@ -5950,8 +6062,13 @@
           results.push({
             type: sourceGroup.type,
             title: record.name || record.title,
-            meta: record.citation || record.city || record.role || record.category || record.type || record.owner || record.status || record.sourceName,
-            view: sourceGroup.view
+            meta: record.citation || record.city || record.role || record.category || record.type || record.owner || record.status || record.sourceName || record.folderHint || record.language || "Company record",
+            view: sourceGroup.view,
+            recordId: record.id,
+            recordAction: sourceGroup.recordAction,
+            libraryCategory: sourceGroup.libraryCategory,
+            libraryMode: sourceGroup.libraryMode,
+            libraryKind: sourceGroup.kindField ? record[sourceGroup.kindField] : null
           });
         }
       });
@@ -5973,7 +6090,15 @@
         ${results.length ? `
           <div class="task-list">
             ${results.map((result) => `
-              <button class="task-row" style="width:100%;text-align:left" type="button" data-action="navigate" data-view="${result.view}">
+              <button
+                class="task-row"
+                style="width:100%;text-align:left"
+                type="button"
+                data-action="${result.libraryCategory ? "open-library" : result.recordAction || "navigate"}"
+                data-view="${result.view}"
+                ${result.libraryCategory ? `data-category="${result.libraryCategory}" data-mode="${result.libraryMode || ""}" data-kind="${result.libraryKind || "all"}" data-query="${escapeHtml(result.title)}"` : ""}
+                ${result.recordAction === "open-employee" ? `data-employee-id="${escapeHtml(result.recordId)}"` : ""}
+              >
                 <span class="type-icon">${escapeHtml(result.type.slice(0, 1))}</span>
                 <span>
                   <span class="task-title">${escapeHtml(result.title)}</span>
@@ -6046,10 +6171,28 @@
       .filter((question) => question.key && question.prompt);
   }
 
+  function renderInspectionContextTrace(template, locationId) {
+    if (!locationId) {
+      return `<span class="trace-label">Template trace</span><div><strong>Select a location to pin the governing jurisdiction.</strong><p>The signed submission will preserve the chosen location profile, template version, question wording, and available source fingerprints.</p>${renderCitationChips("inspection_template", template.id, 3)}</div>`;
+    }
+    const context = locationRegulatoryContext(locationId);
+    return `
+      <span class="trace-label">Template trace</span>
+      <div>
+        <strong>Version ${escapeHtml(template.currentVersion || 1)} · ${escapeHtml(context.jurisdictionName)} primary · federal baseline ${escapeHtml(regulatory.meta.currentThrough || "not recorded")}</strong>
+        <p>The signed submission will preserve the location profile, jurisdiction, question wording, mapping version, citation, and available source fingerprints used at submission time. ${context.profileStatus === "approved" ? "" : "Jurisdiction review is still required."}</p>
+        ${renderStateInspectionChips(template.id, context.jurisdiction)}
+        ${renderCitationChips("inspection_template", template.id, 3)}
+        ${template.id === "tpl-eyewash" ? `<small>The weekly schedule is a company control; 29 CFR 1910.151(c) addresses suitable flushing facilities and does not itself set that weekly activation frequency.</small>` : ""}
+      </div>
+    `;
+  }
+
   function renderInspectionModal() {
-    const selectedTemplate = data.inspectionTemplates.find((template) => template.id === state.selectedTemplateId) || data.inspectionTemplates[0];
-    const selectedLocationId = state.locationId === "all" ? data.locations[0].id : state.locationId;
-    const selectedContext = locationRegulatoryContext(selectedLocationId);
+    const startableTemplates = data.inspectionTemplates.filter((template) => template.published && template.currentVersionId && template.questions > 0);
+    const selectedTemplate = startableTemplates.find((template) => template.id === state.selectedTemplateId) || startableTemplates[0];
+    if (!selectedTemplate) return "";
+    const selectedLocationId = state.locationId === "all" ? "" : state.locationId;
     const questions = inspectionQuestionsFor(selectedTemplate.id);
     return `
       <div class="modal-backdrop" data-action="backdrop-close">
@@ -6072,7 +6215,7 @@
                 </div>
                 <div class="field">
                   <label for="inspection-location">Location</label>
-                  <select id="inspection-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId)}</select>
+                  <select id="inspection-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId, true)}</select>
                 </div>
                 <div class="field full">
                   <label for="inspection-area">Area or equipment</label>
@@ -6080,16 +6223,7 @@
                 </div>
               </div>
               <div style="height:18px"></div>
-              <div class="trace-banner">
-                <span class="trace-label">Template trace</span>
-                <div>
-                  <strong>Version ${escapeHtml(selectedTemplate.currentVersion || 1)} · ${escapeHtml(selectedContext.jurisdictionName)} primary · federal baseline ${escapeHtml(regulatory.meta.currentThrough || "not recorded")}</strong>
-                  <p>The signed submission will preserve the location profile, jurisdiction, question wording, mapping version, citation, and available source fingerprints used at submission time. ${selectedContext.profileStatus === "approved" ? "" : "Jurisdiction review is still required."}</p>
-                  ${renderStateInspectionChips(selectedTemplate.id, selectedContext.jurisdiction)}
-                  ${renderCitationChips("inspection_template", selectedTemplate.id, 3)}
-                  ${selectedTemplate.id === "tpl-eyewash" ? `<small>The weekly schedule is a company control; 29 CFR 1910.151(c) addresses suitable flushing facilities and does not itself set that weekly activation frequency.</small>` : ""}
-                </div>
-              </div>
+              <div class="trace-banner" id="inspection-trace">${renderInspectionContextTrace(selectedTemplate, selectedLocationId)}</div>
               <div style="height:18px"></div>
               <div class="checklist">
                 ${questions.map((question, index) => `
@@ -6121,7 +6255,7 @@
   }
 
   function renderIncidentModal() {
-    const selectedLocationId = state.locationId === "all" ? data.locations[0].id : state.locationId;
+    const selectedLocationId = state.locationId === "all" ? "" : state.locationId;
     return `
       <div class="modal-backdrop" data-action="backdrop-close">
         <section class="modal" role="dialog" aria-modal="true" aria-labelledby="incident-title">
@@ -6138,7 +6272,7 @@
               <div class="form-grid">
                 <div class="field">
                   <label for="incident-location">Location</label>
-                  <select id="incident-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId)}</select>
+                  <select id="incident-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId, true)}</select>
                 </div>
                 <div class="field">
                   <label for="incident-type">Report type</label>
@@ -6173,7 +6307,7 @@
                 </div>
               </div>
               <div style="height:14px"></div>
-              <div class="prototype-note"><strong>Next</strong><span>After submission, the assigned manager receives an investigation task. High-potential events trigger immediate notification and evidence preservation.</span></div>
+              <div class="prototype-note"><strong>Current workflow</strong><span>The report is retained in the incident register. Assignment, investigation, evidence, and closeout controls still need to be enabled before SafetyOps can manage the full case.</span></div>
             </div>
             <footer class="modal-footer">
               <button class="button" type="button" data-action="close-modal">Cancel</button>
@@ -6187,10 +6321,22 @@
 
   function renderTrainingModal() {
     const selectedCourseId = state.modalContext.courseId || state.selectedTemplateId;
-    const selectedCourse = data.courses.find((course) => course.id === selectedCourseId) || data.courses[0];
+    const assignableCourses = data.courses.filter((course) => course.published && course.currentVersionId);
+    const selectedCourse = assignableCourses.find((course) => course.id === selectedCourseId) || assignableCourses[0];
+    if (!selectedCourse) {
+      return `
+        <div class="modal-backdrop" data-action="backdrop-close">
+          <section class="modal" role="dialog" aria-modal="true" aria-labelledby="training-title">
+            <header class="modal-header"><div><p class="section-kicker">Training assignment</p><h2 id="training-title">No published course is available</h2><p>Review the source library before assigning training.</p></div><button class="icon-button" type="button" data-action="close-modal" aria-label="Close dialog">×</button></header>
+            <div class="modal-body">${renderEmptyState("T", "Course publication required", "Training can be assigned after a current course version is reviewed and published.")}</div>
+            <footer class="modal-footer"><button class="button" type="button" data-action="close-modal">Close</button><button class="button primary" type="button" data-action="open-library" data-category="forms" data-mode="archive" data-kind="training">Review training sources</button></footer>
+          </section>
+        </div>
+      `;
+    }
     const selectedPerson = data.people.find((person) => person.id === state.modalContext.employeeId);
     const selectedLocationId = selectedPerson?.locationId
-      || (state.locationId === "all" ? data.locations[0]?.id : state.locationId);
+      || (state.locationId === "all" ? "" : state.locationId);
     const eligiblePeople = data.people.filter((person) =>
       person.locationIds?.includes(selectedLocationId) && person.employmentStatus !== "Separated"
     );
@@ -6211,17 +6357,18 @@
                 <div class="field full">
                   <label for="course-select">Course</label>
                   <select id="course-select" name="course_id" required>
-                    ${data.courses.map((course) => `<option value="${course.id}" ${course.id === selectedCourse.id ? "selected" : ""}>${escapeHtml(course.name)} · ${escapeHtml(course.duration)}</option>`).join("")}
+                    ${assignableCourses.map((course) => `<option value="${course.id}" ${course.id === selectedCourse.id ? "selected" : ""}>${escapeHtml(course.name)} · ${escapeHtml(course.duration)}</option>`).join("")}
                   </select>
                 </div>
                 <div class="field">
                   <label for="training-location">Location</label>
-                  <select id="training-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId)}</select>
+                  <select id="training-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId, true)}</select>
                 </div>
                 <div class="field">
                   <label for="training-employee">Employee(s)</label>
                   <select id="training-employee" name="employee_id" required>
-                    <option value="all" ${selectedPerson ? "" : "selected"}>All employees at this location</option>
+                    ${selectedPerson ? "" : `<option value="" selected disabled>Select an employee or roster</option>`}
+                    <option value="all">Entire authorized roster (${eligiblePeople.length})</option>
                     ${eligiblePeople.map((person) => `<option value="${person.id}" ${person.id === selectedPerson?.id ? "selected" : ""}>${escapeHtml(person.name)}</option>`).join("")}
                   </select>
                 </div>
@@ -6248,6 +6395,8 @@
                 </div>
               </div>
               <div style="height:14px"></div>
+              <div class="prototype-note"><strong>Confirm roster scope</strong><span>Choose “Entire authorized roster” deliberately. The assignment applies to every active employee at the selected location.</span></div>
+              <div style="height:14px"></div>
               <div class="prototype-note"><strong>Retention trace</strong><span>Leave retention blank when the governing company or regulatory policy has not been reviewed. SafetyOps will display Policy review required instead of inventing a universal OSHA period.</span></div>
             </div>
             <footer class="modal-footer">
@@ -6265,7 +6414,7 @@
       meeting.id === state.modalContext.meetingId
     );
     const selectedLocationId = sourceMeeting?.locationId
-      || (state.locationId === "all" ? data.locations[0].id : state.locationId);
+      || (state.locationId === "all" ? "" : state.locationId);
     const eligibleOwners = data.people.filter((person) =>
       person.locationIds?.includes(selectedLocationId)
     );
@@ -6287,7 +6436,7 @@
                 ${sourceMeeting ? `<div class="field full"><label>Source meeting</label><input value="${escapeHtml(sourceMeeting.title)} · ${escapeHtml(sourceMeeting.date)}" readonly></div>` : ""}
                 <div class="field full"><label for="action-name">Action</label><input id="action-name" name="title" minlength="3" maxlength="240" required placeholder="Describe the required correction"></div>
                 <div class="field full"><label for="action-description">Details</label><textarea id="action-description" name="description" placeholder="Record the committee decision, expected outcome, or completion criteria"></textarea></div>
-                <div class="field"><label for="action-location">Location</label><select id="action-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId)}</select></div>
+                <div class="field"><label for="action-location">Location</label><select id="action-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId, true)}</select></div>
                 <div class="field"><label for="action-owner">Owner</label><select id="action-owner" name="owner_id" ${eligibleOwners.length ? "" : "disabled"} required>${eligibleOwners.map((person) => `<option value="${escapeHtml(person.id)}">${escapeHtml(person.name)}</option>`).join("")}</select></div>
                 <div class="field"><label for="action-priority">Priority</label><select id="action-priority" name="priority"><option>Low</option><option selected>Medium</option><option>High</option><option>Critical</option></select></div>
                 <div class="field"><label for="action-due">Due date</label><input id="action-due" type="date" name="due_date" value="${isoDateOffset(7)}" required></div>
@@ -6305,7 +6454,7 @@
   }
 
   function renderCommitteeModal() {
-    const selectedLocationId = state.locationId === "all" ? data.locations[0]?.id : state.locationId;
+    const selectedLocationId = state.locationId === "all" ? "" : state.locationId;
     const eligiblePeople = data.people.filter((person) =>
       person.locationIds?.includes(selectedLocationId) && person.employmentStatus !== "Separated"
     );
@@ -6325,9 +6474,9 @@
               <div class="form-grid">
                 <div class="field full"><label for="committee-title">Meeting title</label><input id="committee-title" name="title" minlength="3" maxlength="220" required placeholder="Monthly safety committee meeting"></div>
                 <div class="field"><label for="committee-date">Meeting date</label><input id="committee-date" type="date" name="meeting_date" value="${isoDateOffset()}" required></div>
-                <div class="field"><label for="committee-location">Location</label><select id="committee-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId)}</select></div>
+                <div class="field"><label for="committee-location">Location</label><select id="committee-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId, true)}</select></div>
                 <div class="field"><label for="committee-chair">Chair</label><select id="committee-chair" name="chair_employee_id" required>${eligiblePeople.map((person) => `<option value="${person.id}">${escapeHtml(person.name)}</option>`).join("")}</select></div>
-                <div class="field"><label for="committee-attendees">Attendees</label><select id="committee-attendees" name="attendee_ids" multiple size="5" required>${eligiblePeople.map((person) => `<option value="${person.id}" selected>${escapeHtml(person.name)}</option>`).join("")}</select></div>
+                <div class="field"><label for="committee-attendees">Attendees</label><select id="committee-attendees" name="attendee_ids" multiple size="5" required>${eligiblePeople.map((person) => `<option value="${person.id}">${escapeHtml(person.name)}</option>`).join("")}</select><span class="field-hint">Select only employees who attended; no one is preselected.</span></div>
                 <div class="field full"><label for="committee-agenda">Agenda</label><textarea id="committee-agenda" name="agenda" placeholder="Topics reviewed"></textarea></div>
                 <div class="field full"><label for="committee-notes">Meeting notes</label><textarea id="committee-notes" name="notes" minlength="3" required placeholder="Discussion, observations, and employee input"></textarea></div>
                 <div class="field full"><label for="committee-decisions">Decisions</label><textarea id="committee-decisions" name="decisions" placeholder="Decisions made and controls approved"></textarea></div>
@@ -6345,7 +6494,7 @@
   }
 
   function renderEmployeeModal() {
-    const selectedLocationId = state.locationId === "all" ? data.locations[0]?.id : state.locationId;
+    const selectedLocationId = state.locationId === "all" ? "" : state.locationId;
     return `
       <div class="modal-backdrop" data-action="backdrop-close">
         <section class="modal" role="dialog" aria-modal="true" aria-labelledby="employee-modal-title">
@@ -6361,7 +6510,7 @@
                 <div class="field"><label for="employee-email">Work email</label><input id="employee-email" name="work_email" type="email" autocomplete="email"></div>
                 <div class="field"><label for="employee-title">Job title</label><input id="employee-title" name="job_title" maxlength="160"></div>
                 <div class="field"><label for="employee-department">Department</label><input id="employee-department" name="department" maxlength="160"></div>
-                <div class="field full"><label for="employee-location">Primary location</label><select id="employee-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId)}</select></div>
+                <div class="field full"><label for="employee-location">Primary location</label><select id="employee-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId, true)}</select></div>
               </div>
               <div class="prototype-note"><strong>No employee account required</strong><span>The safety user can assign training, upload signed records, and facilitate an in-person tablet acknowledgement for this employee.</span></div>
             </div>
@@ -6399,7 +6548,7 @@
   function renderEmployeeFormAssignmentModal() {
     const selectedPerson = data.people.find((person) => person.id === state.modalContext.employeeId);
     const selectedLocationId = selectedPerson?.locationId
-      || (state.locationId === "all" ? data.locations[0]?.id : state.locationId);
+      || (state.locationId === "all" ? "" : state.locationId);
     const eligiblePeople = data.people.filter((person) =>
       person.locationIds?.includes(selectedLocationId) && person.employmentStatus !== "Separated"
     );
@@ -6413,14 +6562,14 @@
         <section class="modal wide" role="dialog" aria-modal="true" aria-labelledby="employee-form-assignment-title">
           <header class="modal-header">
             <div><p class="section-kicker">Facilitated tablet workflow</p><h2 id="employee-form-assignment-title">Assign employee form</h2><p>Create a dashboard item, then launch a one-time employee-only handoff when the tablet is ready.</p></div>
-            <button class="icon-button" type="button" data-action="close-modal" aria-label="Close dialog">Ã—</button>
+            <button class="icon-button" type="button" data-action="close-modal" aria-label="Close dialog">×</button>
           </header>
           <form id="employee-form-assignment-form">
             <div class="modal-body">
               <div class="form-grid">
-                <div class="field"><label for="employee-form-location">Location</label><select id="employee-form-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId)}</select></div>
+                <div class="field"><label for="employee-form-location">Location</label><select id="employee-form-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId, true)}</select></div>
                 <div class="field"><label for="employee-form-employee">Employee</label><select id="employee-form-employee" name="employee_id" required>${eligiblePeople.map((person) => `<option value="${person.id}" ${person.id === selectedPerson?.id ? "selected" : ""}>${escapeHtml(person.name)}</option>`).join("")}</select></div>
-                <div class="field full"><label for="employee-form-template">Form template</label><select id="employee-form-template" name="form_template_version_id" required>${eligibleForms.map((template) => `<option value="${template.formTemplateVersionId}">${escapeHtml(template.title)} Â· ${escapeHtml(template.version)}</option>`).join("") || `<option value="">No eligible published forms at this location</option>`}</select></div>
+                <div class="field full"><label for="employee-form-template">Form template</label><select id="employee-form-template" name="form_template_version_id" required>${eligibleForms.map((template) => `<option value="${template.formTemplateVersionId}">${escapeHtml(template.title)} · ${escapeHtml(template.version)}</option>`).join("") || `<option value="">No eligible published forms at this location</option>`}</select></div>
                 <div class="field"><label for="employee-form-due">Due date</label><input id="employee-form-due" name="due_date" type="date" value="${isoDateOffset(7)}"></div>
                 <div class="field"><label for="employee-form-title-input">Assignment title</label><input id="employee-form-title-input" name="title" maxlength="220" placeholder="Defaults to the form title"></div>
                 <div class="field full"><label for="employee-form-instructions">Instructions</label><textarea id="employee-form-instructions" name="instructions" maxlength="2000" placeholder="Optional employee instructions"></textarea></div>
@@ -6437,7 +6586,7 @@
   function renderEmployeeDocumentModal() {
     const selectedPerson = data.people.find((person) => person.id === state.modalContext.employeeId);
     const selectedLocationId = selectedPerson?.locationId
-      || (state.locationId === "all" ? data.locations[0]?.id : state.locationId);
+      || (state.locationId === "all" ? "" : state.locationId);
     const eligiblePeople = data.people.filter((person) =>
       person.locationIds?.includes(selectedLocationId) && person.employmentStatus !== "Separated"
     );
@@ -6448,7 +6597,7 @@
           <header class="modal-header"><div><p class="section-kicker">Private employee record</p><h2 id="employee-document-title">Employee document</h2><p>Request an in-person tablet acknowledgement or attach an already-signed PDF.</p></div><button class="icon-button" type="button" data-action="close-modal" aria-label="Close dialog">×</button></header>
           <form id="employee-document-form">
             <div class="modal-body"><div class="form-grid">
-              <div class="field"><label for="employee-document-location">Location</label><select id="employee-document-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId)}</select></div>
+              <div class="field"><label for="employee-document-location">Location</label><select id="employee-document-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId, true)}</select></div>
               <div class="field"><label for="employee-document-employee">Employee</label><select id="employee-document-employee" name="employee_id" required>${eligiblePeople.map((person) => `<option value="${person.id}" ${person.id === selectedPerson?.id ? "selected" : ""}>${escapeHtml(person.name)}</option>`).join("")}</select></div>
               <div class="field"><label for="employee-document-workflow">Workflow</label><select id="employee-document-workflow" name="document_kind" required><option value="signature_request" ${selectedKind === "signature_request" ? "selected" : ""}>Request e-signature</option><option value="signed_upload" ${selectedKind === "signed_upload" ? "selected" : ""}>Upload signed PDF</option></select></div>
               <div class="field"><label for="employee-document-date">Document date</label><input id="employee-document-date" type="date" name="document_date" value="${isoDateOffset()}" required></div>
@@ -6459,7 +6608,7 @@
               <div class="field full"><label for="employee-document-intent">Signature intent</label><textarea id="employee-document-intent" name="signature_intent">I acknowledge that I reviewed this document and understand the requirements that apply to my work.</textarea></div>
             </div>
             <div class="scan-warning"><strong>Current file-control stage</strong><span>The Edge authority verifies exact PDF bytes, size, SHA-256, and blocks common active content. Malware scanning is not configured yet and will remain visibly marked unavailable.</span></div></div>
-            <footer class="modal-footer"><button class="button" type="button" data-action="close-modal">Cancel</button><button class="button primary" type="submit">Prepare secure upload</button></footer>
+            <footer class="modal-footer"><button class="button" type="button" data-action="close-modal">Cancel</button><button class="button primary" type="submit" ${eligiblePeople.length ? "" : "disabled"}>Prepare secure upload</button></footer>
           </form>
         </section>
       </div>
@@ -6690,20 +6839,20 @@
       return `<main class="handoff-standalone"><section class="auth-card"><h1>Employee form unavailable</h1><p>The secure data service is not configured on this deployment.</p></section></main>`;
     }
     if (handoff.status === "loading") {
-      return `<main class="handoff-standalone"><section class="auth-card"><p class="section-kicker">SafetyOps secure handoff</p><h1>Loading employee formâ€¦</h1><p>Verifying this one-time session without opening the company dashboard.</p></section></main>`;
+      return `<main class="handoff-standalone"><section class="auth-card"><p class="section-kicker">SafetyOps secure handoff</p><h1>Loading employee form…</h1><p>Verifying this one-time session without opening the company dashboard.</p></section></main>`;
     }
     if (handoff.status === "error") {
       return `<main class="handoff-standalone"><section class="auth-card"><p class="section-kicker">SafetyOps secure handoff</p><h1>This employee form cannot be opened</h1><p>${escapeHtml(handoff.error || "The link expired, was revoked, or has already been used.")}</p><p>Ask the safety facilitator to start a new tablet session from the dashboard.</p><button class="button" type="button" data-action="close-handoff-window">Close this tab</button></section></main>`;
     }
     if (handoff.status === "complete") {
-      return `<main class="handoff-standalone"><section class="handoff-complete-card"><span class="success-mark" aria-hidden="true">âœ“</span><p class="section-kicker">Submission retained</p><h1>Employee form complete</h1><p>Your answers and typed signature were bound to the exact controlled form schema. The safety dashboard will show this item as completed.</p><dl><div><dt>Submitted</dt><dd>${escapeHtml(formatShortDate(handoff.receipt?.submitted_at, "Just now"))}</dd></div><div><dt>Evidence SHA-256</dt><dd><code>${escapeHtml(handoff.receipt?.submission_sha256 || "")}</code></dd></div></dl><button class="button primary" type="button" data-action="close-handoff-window">Close this tab</button></section></main>`;
+      return `<main class="handoff-standalone"><section class="handoff-complete-card"><span class="success-mark" aria-hidden="true">✓</span><p class="section-kicker">Submission retained</p><h1>Employee form complete</h1><p>Your answers and typed signature were bound to the exact controlled form schema. The safety dashboard will show this item as completed.</p><dl><div><dt>Submitted</dt><dd>${escapeHtml(formatShortDate(handoff.receipt?.submitted_at, "Just now"))}</dd></div><div><dt>Evidence SHA-256</dt><dd><code>${escapeHtml(handoff.receipt?.submission_sha256 || "")}</code></dd></div></dl><button class="button primary" type="button" data-action="close-handoff-window">Close this tab</button></section></main>`;
     }
     const item = handoff.data;
     return `
       <main class="signing-handoff handoff-standalone" role="main">
         <section class="signing-handoff-shell employee-form-handoff-shell">
           <header>
-            <div><p class="section-kicker">${escapeHtml(item.companyName)} Â· secure employee form</p><h1>${escapeHtml(item.title)}</h1><p>${escapeHtml(item.employeeName)} Â· ${escapeHtml(item.locationName)}</p></div>
+            <div><p class="section-kicker">${escapeHtml(item.companyName)} · secure employee form</p><h1>${escapeHtml(item.title)}</h1><p>${escapeHtml(item.employeeName)} · ${escapeHtml(item.locationName)}</p></div>
             <span class="private-source-badge">One-time session</span>
           </header>
           <form id="employee-handoff-form" class="signing-handoff-body">
@@ -6775,7 +6924,7 @@
     const formData = new FormData(form);
     if (submitButton) {
       submitButton.disabled = true;
-      submitButton.textContent = "Submittingâ€¦";
+      submitButton.textContent = "Submitting…";
     }
     const result = await supabaseClient.rpc("submit_employee_form_handoff", {
       target_token: employeeHandoffToken,
@@ -7139,7 +7288,7 @@
     const submitButton = form.querySelector('button[type="submit"]');
     if (submitButton) {
       submitButton.disabled = true;
-      submitButton.textContent = "Assigningâ€¦";
+      submitButton.textContent = "Assigning…";
     }
     const result = await supabaseClient.rpc("assign_employee_form", {
       target_employee_id: employeeId,
@@ -7174,7 +7323,7 @@
     if (handoffWindow) {
       handoffWindow.opener = null;
       handoffWindow.document.title = "Opening secure employee form";
-      handoffWindow.document.body.textContent = "Opening the secure SafetyOps employee formâ€¦";
+      handoffWindow.document.body.textContent = "Opening the secure SafetyOps employee form…";
     }
     const result = await supabaseClient.rpc("begin_employee_form_handoff", {
       target_assignment_id: assignment.id
@@ -7197,6 +7346,7 @@
     const handoffUrl = new URL(window.location.href);
     handoffUrl.hash = `handoff=${ceremony.handoff_token}`;
     handoffWindow.location.replace(handoffUrl.href);
+    state.handoffRefreshPending = true;
     showToast("Tablet form opened", `${assignment.employee}'s one-time form is isolated in a new tab and expires in 15 minutes.`);
   }
 
@@ -7240,7 +7390,7 @@
     }
     await loadAuthenticatedWorkspace(state.authUser);
     const receipt = Array.isArray(result.data) ? result.data[0] : result.data;
-    showToast("Committee minutes finalized", `Immutable minutes SHA-256: ${String(receipt?.minutes_sha256 || "").slice(0, 16)}â€¦`);
+    showToast("Committee minutes finalized", `Immutable minutes SHA-256: ${String(receipt?.minutes_sha256 || "").slice(0, 16)}…`);
   }
 
   async function handleEmployeeSubmit(form) {
@@ -7307,7 +7457,7 @@
     }
     if (submitButton) {
       submitButton.disabled = true;
-      submitButton.textContent = "Preparing secure uploadâ€¦";
+      submitButton.textContent = "Preparing secure upload…";
     }
     try {
       const retentionMonths = Number(formData.get("retention_months") || 0) || null;
@@ -7336,7 +7486,7 @@
       if (prepareResult.error || !prepareResult.data?.upload_token) {
         throw prepareResult.error || new Error("The upload could not be authorized.");
       }
-      if (submitButton) submitButton.textContent = "Uploading exact PDFâ€¦";
+      if (submitButton) submitButton.textContent = "Uploading exact PDF…";
       const prepared = prepareResult.data;
       const uploadResult = await supabaseClient.storage
         .from(prepared.bucket_id)
@@ -7344,7 +7494,7 @@
           contentType: "application/pdf"
         });
       if (uploadResult.error) throw uploadResult.error;
-      if (submitButton) submitButton.textContent = "Verifying SHA-256â€¦";
+      if (submitButton) submitButton.textContent = "Verifying SHA-256…";
       const completeResult = await supabaseClient.functions.invoke("employee-document-file", {
         body: { action: "complete", upload_session_id: prepared.upload_session_id }
       });
@@ -7391,7 +7541,7 @@
     state.modalContext = {};
     await loadAuthenticatedWorkspace(state.authUser);
     const receipt = Array.isArray(result.data) ? result.data[0] : result.data;
-    showToast("Employee acknowledgement retained", `Signature SHA-256: ${String(receipt?.signature_sha256 || "").slice(0, 16)}â€¦`);
+    showToast("Employee acknowledgement retained", `Signature SHA-256: ${String(receipt?.signature_sha256 || "").slice(0, 16)}…`);
   }
 
   async function downloadEmployeeDocument(documentId) {
@@ -7438,46 +7588,6 @@
     } catch (error) {
       showToast("Security scan unavailable", error?.message || "The configured malware scanner could not complete the scan.");
     }
-  }
-
-  async function handleDocumentAcknowledgement(documentId) {
-    if (isReadOnlyAuditor()) {
-      showToast("Acknowledgement unavailable", "The auditor role is read-only.");
-      return;
-    }
-    const documentRecord = data.documents.find((item) => item.id === documentId);
-    if (
-      !documentRecord?.acknowledgementRequired
-      || !documentRecord.currentVersionId
-      || !documentRecord.versionPublished
-    ) {
-      showToast("Acknowledgement unavailable", "A published current document version is required.");
-      return;
-    }
-    if (documentRecord.acknowledgement === 100) {
-      showToast("Already acknowledged", `${documentRecord.name} is already acknowledged for this version.`);
-      return;
-    }
-    const acknowledgedAt = new Date().toISOString();
-    const result = await supabaseClient.from("document_acknowledgements").insert({
-      company_id: data.company.id,
-      document_id: documentRecord.id,
-      document_version_id: documentRecord.currentVersionId,
-      user_id: state.authUser.id,
-      acknowledged_at: acknowledgedAt,
-      acknowledgement_record: {
-        documentVersion: documentRecord.versionNumber,
-        documentVersionChecksumSha256: documentRecord.versionChecksumSha256,
-        acknowledgedBy: state.authUser.id,
-        acknowledgedAt
-      }
-    });
-    if (result.error) {
-      showToast("Acknowledgement not recorded", result.error.message || "Supabase rejected the acknowledgement.");
-      return;
-    }
-    await loadAuthenticatedWorkspace(state.authUser);
-    showToast("Acknowledgement recorded", "Supabase stored the user, exact document version, checksum reference, and timestamp.");
   }
 
   async function handleFormUploadSubmit(form) {
@@ -7917,49 +8027,6 @@
     }
   }
 
-  async function recordProgramAssignment(programId) {
-    const item = (programLibrary.programs || []).find((record) => record.id === programId);
-    if (!item?.programVersionId || item.programStatus !== "published") {
-      showToast("Assignment unavailable", "Publish the controlled program version before assigning it.");
-      return;
-    }
-    if (!canWriteLocation()) {
-      showToast("Assignment unavailable", "Your role cannot assign safety programs for the selected location.");
-      return;
-    }
-    const locationIds = (state.locationId === "all"
-      ? item.locations || []
-      : (item.locations || []).filter((locationId) => locationId === state.locationId))
-      .filter((locationId) => canWriteLocation(locationId));
-    if (!locationIds.length) {
-      showToast("Assignment unavailable", "Select a location where this program has reviewed applicability.");
-      return;
-    }
-    const dueAt = new Date(Date.now() + 30 * 86_400_000).toISOString();
-    const rows = locationIds.map((locationId) => ({
-      company_id: data.company.id,
-      program_version_id: item.programVersionId,
-      location_id: locationId,
-      assignee_user_id: state.authUser.id,
-      assignment_type: "read_and_acknowledge",
-      title: `Acknowledge ${item.title}`,
-      instructions: "Read the published program and complete the acknowledgement.",
-      status: "assigned",
-      due_at: dueAt,
-      assigned_by: state.authUser.id
-    }));
-    const result = await supabaseClient.from("safety_program_assignments").insert(rows);
-    if (result.error) {
-      showToast("Assignment not created", result.error.message || "Supabase rejected the assignment.");
-      return;
-    }
-    await loadAuthenticatedWorkspace(state.authUser);
-    showToast(
-      "Acknowledgement assigned",
-      `${item.title} was assigned to you at ${locationIds.length} applicable location${locationIds.length === 1 ? "" : "s"}.`
-    );
-  }
-
   document.addEventListener("click", (event) => {
     const target = event.target.closest("[data-action]");
     if (!target) return;
@@ -7989,6 +8056,23 @@
 
     if (action === "navigate") {
       navigate(target.dataset.view);
+      return;
+    }
+
+    if (action === "open-library") {
+      openLibrary(target.dataset.category, {
+        mode: target.dataset.mode,
+        kind: target.dataset.kind,
+        query: target.dataset.query
+      });
+      return;
+    }
+
+    if (action === "refresh-workspace" && state.authUser) {
+      target.disabled = true;
+      loadAuthenticatedWorkspace(state.authUser).then(() => {
+        if (state.authStatus === "ready") showToast("Workspace refreshed", "The latest authorized company records are now loaded.");
+      });
       return;
     }
 
@@ -8179,21 +8263,6 @@
       return;
     }
 
-    if (action === "assign-program") {
-      recordProgramAssignment(target.dataset.programId);
-      return;
-    }
-
-    if (action === "program-import-status") {
-      showToast(
-        programLibraryItems().length ? "Secure ingestion staged" : "Tenant library is empty",
-        programLibraryItems().length
-          ? "The source hierarchy and identities are indexed. Private binary sync, review, and publication use the configured Supabase tenant."
-          : "The public GitHub shell has no company files. Create a company or sign in before connecting a private source library."
-      );
-      return;
-    }
-
     if (action === "check-osha-update") {
       showToast(
         "Official source status",
@@ -8270,19 +8339,9 @@
       return;
     }
 
-    if (action === "prototype-action") {
-      showToast("Workflow not enabled", target.dataset.message || "This workflow still requires its server-side authority.");
-      return;
-    }
-
     if (action === "select-location") {
       state.locationId = target.dataset.locationId;
       navigate("dashboard");
-      return;
-    }
-
-    if (action === "acknowledge-document") {
-      handleDocumentAcknowledgement(target.dataset.documentId);
       return;
     }
 
@@ -8296,6 +8355,13 @@
   });
 
   document.addEventListener("change", (event) => {
+    if (event.target.id === "inspection-location") {
+      const templateId = document.querySelector('#inspection-form input[name="template_id"]')?.value;
+      const template = data.inspectionTemplates.find((item) => item.id === templateId);
+      const trace = document.querySelector("#inspection-trace");
+      if (template && trace) trace.innerHTML = renderInspectionContextTrace(template, event.target.value);
+      return;
+    }
     if (event.target.id === "employee-form-location") {
       const locationId = event.target.value;
       const people = data.people.filter((person) =>
@@ -8310,7 +8376,7 @@
       const templateSelect = document.querySelector("#employee-form-template");
       const submitButton = document.querySelector('#employee-form-assignment-form button[type="submit"]');
       if (employeeSelect) employeeSelect.innerHTML = people.map((person) => `<option value="${person.id}">${escapeHtml(person.name)}</option>`).join("") || `<option value="">No employees at this location</option>`;
-      if (templateSelect) templateSelect.innerHTML = templates.map((template) => `<option value="${template.formTemplateVersionId}">${escapeHtml(template.title)} Â· ${escapeHtml(template.version)}</option>`).join("") || `<option value="">No eligible published forms</option>`;
+      if (templateSelect) templateSelect.innerHTML = templates.map((template) => `<option value="${template.formTemplateVersionId}">${escapeHtml(template.title)} · ${escapeHtml(template.version)}</option>`).join("") || `<option value="">No eligible published forms</option>`;
       if (submitButton) submitButton.disabled = !people.length || !templates.length;
       return;
     }
@@ -8319,7 +8385,25 @@
         person.locationIds?.includes(event.target.value) && person.employmentStatus !== "Separated"
       );
       const employeeSelect = document.querySelector("#training-employee");
-      if (employeeSelect) employeeSelect.innerHTML = `<option value="all">All employees at this location</option>${people.map((person) => `<option value="${person.id}">${escapeHtml(person.name)}</option>`).join("")}`;
+      if (employeeSelect) employeeSelect.innerHTML = `<option value="" selected disabled>Select an employee or roster</option><option value="all">Entire authorized roster (${people.length})</option>${people.map((person) => `<option value="${person.id}">${escapeHtml(person.name)}</option>`).join("")}`;
+      return;
+    }
+    if (event.target.id === "committee-location") {
+      const people = data.people.filter((person) => (
+        person.locationIds?.includes(event.target.value) && person.employmentStatus !== "Separated"
+      ));
+      const chairSelect = document.querySelector("#committee-chair");
+      const attendeesSelect = document.querySelector("#committee-attendees");
+      const submitButton = document.querySelector('#committee-form button[type="submit"]');
+      if (chairSelect) {
+        chairSelect.innerHTML = people.map((person) => `<option value="${person.id}">${escapeHtml(person.name)}</option>`).join("");
+        chairSelect.disabled = !people.length;
+      }
+      if (attendeesSelect) {
+        attendeesSelect.innerHTML = people.map((person) => `<option value="${person.id}">${escapeHtml(person.name)}</option>`).join("");
+        attendeesSelect.disabled = !people.length;
+      }
+      if (submitButton) submitButton.disabled = !people.length;
       return;
     }
     if (event.target.id === "employee-document-location") {
@@ -8373,6 +8457,31 @@
         state.standardPart = "all";
         state.standardScope = "all";
       }
+      render();
+      return;
+    }
+    if (event.target.id === "inspection-category") {
+      state.inspectionCategory = event.target.value || "all";
+      render();
+      return;
+    }
+    if (event.target.id === "incident-status") {
+      state.incidentStatus = event.target.value || "all";
+      render();
+      return;
+    }
+    if (event.target.id === "action-sort") {
+      state.actionSort = event.target.value || "priority";
+      render();
+      return;
+    }
+    if (event.target.id === "document-type") {
+      state.documentType = event.target.value || "all";
+      render();
+      return;
+    }
+    if (event.target.id === "people-readiness") {
+      state.peopleReadiness = event.target.value || "all";
       render();
       return;
     }
@@ -8563,8 +8672,14 @@
     }
   });
 
-  window.addEventListener("focus", () => {
-    if (!isEmployeeHandoffMode && state.authStatus === "ready" && state.authUser) {
+  document.addEventListener("visibilitychange", () => {
+    if (
+      document.visibilityState === "visible"
+      && state.handoffRefreshPending
+      && state.authStatus === "ready"
+      && state.authUser
+    ) {
+      state.handoffRefreshPending = false;
       loadAuthenticatedWorkspace(state.authUser);
     }
   });

@@ -58,7 +58,7 @@ test("task-first home exposes setup, quick actions, the safety inbox, and the mo
   await expect(page.getByLabel(/% setup complete$/)).toBeVisible();
   await expect(page.getByRole("heading", { name: "Safety inbox" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Quick start" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Start a form/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Start inspection/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Report incident/ })).toBeVisible();
 
   await page.getByRole("button", { name: /Open monitor/ }).click();
@@ -72,14 +72,14 @@ test("inspection workflow creates a submitted record", async ({ page }, testInfo
   await page.goto("/");
   if (testInfo.project.name === "mobile") {
     await page.getByRole("navigation", { name: "Mobile navigation" })
-      .getByRole("button", { name: "Forms", exact: true })
+      .getByRole("button", { name: "Inspect", exact: true })
       .click();
   } else {
     await page.getByLabel("Primary navigation")
-      .getByRole("button", { name: "Forms", exact: true })
+      .getByRole("button", { name: "Inspections", exact: true })
       .click();
   }
-  await expect(page.getByRole("heading", { name: "Forms & inspections" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Inspections", exact: true })).toBeVisible();
 
   const startButtons = page.getByRole("button", { name: "Start", exact: true });
   await expect(startButtons.first()).toBeVisible();

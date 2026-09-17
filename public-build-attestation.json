@@ -4,8 +4,8 @@
   "files": [
     {
       "path": "app.js",
-      "bytes": 429408,
-      "sha256": "519624885124f204310c67c7c26d3d5a571dce8bc1da6c085507b427c8f59307"
+      "bytes": 438438,
+      "sha256": "776c772edeee6ecb209d01320820862198737d052e9a6f9c5e1dad99f74aadfe"
     },
     {
       "path": "data.js",
@@ -63,7 +63,7 @@
       "sha256": "7e94b62086deecef8c0ba3b38f514e2a1944ff6c81d92fb3ff967828c406c38f"
     }
   ],
-  "aggregateSha256": "3a777f4b320d27c5d2ab31a750a52847c0d9dea645a1ca417c4ccae9f2fa7f23",
+  "aggregateSha256": "4da39921382141e031704db04518504ae88d551468edbf1cb530143d0d4c4282",
   "releaseFiles": [
     {
       "path": ".github/workflows/deploy-pages.yml",
@@ -77,8 +77,8 @@
     },
     {
       "path": "app.js",
-      "bytes": 429408,
-      "sha256": "519624885124f204310c67c7c26d3d5a571dce8bc1da6c085507b427c8f59307"
+      "bytes": 438438,
+      "sha256": "776c772edeee6ecb209d01320820862198737d052e9a6f9c5e1dad99f74aadfe"
     },
     {
       "path": "data.js",
@@ -189,6 +189,11 @@
       "path": "docs/supabase-architecture.md",
       "bytes": 3802,
       "sha256": "e6e84476f0c66c833a1cafc3adc346b3202b0bb33d61d0138bb30661566d8243"
+    },
+    {
+      "path": "docs/UX_FLOW_REVIEW.md",
+      "bytes": 5709,
+      "sha256": "faa2938227e7ce2631d5550d567cf7294deeb530fa27ce1f3923dde3a3f12be1"
     },
     {
       "path": "index.html",
@@ -416,6 +421,11 @@
       "sha256": "173b97ac95fe8ff0548ac39e7e5f548d03eb53801d7380cf2ce4020e4db82aee"
     },
     {
+      "path": "supabase/migrations/20260917183537_harden_public_function_execute_privileges.sql",
+      "bytes": 6592,
+      "sha256": "7fd872b6dd1f0c8a88457a1a453af06f92470099f7b65e4662bcce79618061ae"
+    },
+    {
       "path": "supabase/README.md",
       "bytes": 17520,
       "sha256": "4617dda3a4cf6dfdf8fdefbc14779528bcd402d6f959045afef5f26773e5ea06"
@@ -427,8 +437,8 @@
     },
     {
       "path": "tests/access-control.spec.js",
-      "bytes": 5574,
-      "sha256": "a46cb5213488da91ea3579a91c0ac357b09135c71d83ebea7b0ec0f613eda57a"
+      "bytes": 5586,
+      "sha256": "10b3768f9480c595e0e9e375347fbfa34e39c0607c2b93a561796358eb335213"
     },
     {
       "path": "tests/auth-onboarding.spec.js",
@@ -437,28 +447,33 @@
     },
     {
       "path": "tests/helpers/authenticated-workspace.js",
-      "bytes": 89547,
-      "sha256": "38a8874672a5e7bc8c7dd09bfff5d57aee2b1b03e9d78f0b9a9e86456c27c625"
+      "bytes": 94655,
+      "sha256": "d5914524e5446424ed29057d4cd7e9e7fe98872ee2f5c6cd460cf553b205241d"
     },
     {
       "path": "tests/osha-reference.spec.js",
-      "bytes": 11261,
-      "sha256": "d9af2fbbb4a30cbaca8d0106391c735ac59ad48b87be2a1f09cfbc3c1b440a51"
+      "bytes": 11269,
+      "sha256": "3ec661652128fb90f49dc84d11dda77965a48b5a31c161000067912fee5e2278"
     },
     {
       "path": "tests/safety-programs.spec.js",
-      "bytes": 29139,
-      "sha256": "778f8a9bd7431610eda2ca654824025b811b92d2ffad58f85bf5dcc750140ec8"
+      "bytes": 29081,
+      "sha256": "72058736f6303954517c1a7be70c452a03d11a385edd98ba1c47365ce4c8819b"
     },
     {
       "path": "tests/safety-workflows.spec.js",
-      "bytes": 22218,
-      "sha256": "e37d0d9c0684325ea2610ed368a82861f2fe62c382c545487d6e5988c5929779"
+      "bytes": 22404,
+      "sha256": "851afaabce230a20ba2416a84f87ac84ae0158223e6ccb96c182536b0befd635"
     },
     {
       "path": "tests/smoke.spec.js",
-      "bytes": 6420,
-      "sha256": "ab2c7760437c4b52813b4502920943c5f6f531c71a69ee711b8df69608e19547"
+      "bytes": 6447,
+      "sha256": "9c76ebcf8c04fae01184187eda0ec2c129152d1758e9ade950eecf8688d0ec92"
+    },
+    {
+      "path": "tests/ux-paths.spec.js",
+      "bytes": 7006,
+      "sha256": "1f406dc7fbae8d1599bddc70c13abf8f0132a1644afbd61adcfc4a9d2a485c09"
     },
     {
       "path": "vendor/supabase.js",
@@ -466,5 +481,5 @@
       "sha256": "7e94b62086deecef8c0ba3b38f514e2a1944ff6c81d92fb3ff967828c406c38f"
     }
   ],
-  "releaseAggregateSha256": "8476a8f0a568c0635cef8f9d0881eb1e6fc6f1f653560a0226bb85a55c723ffb"
+  "releaseAggregateSha256": "2f5663ed842d2ace5e51f73fa2cf2271041304bb41569ea7ebf4a8ad8abcb254"
 }

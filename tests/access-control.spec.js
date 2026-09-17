@@ -15,7 +15,7 @@ test("worker sees reporting work but not manager-only creation controls", async 
   await page.goto("/");
 
   await expect(page.getByRole("button", { name: "Report incident" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: /Start a form/ })).toBeEnabled();
+  await expect(page.getByRole("button", { name: /Start inspection/ })).toBeEnabled();
 
   await openWorkspaceView(page, testInfo.project.name, "training", "Training");
   await expect(page.getByRole("button", { name: "Assign training" })).toBeDisabled();
@@ -46,7 +46,7 @@ test("auditor role is read-only in operational workflows", async ({ page }, test
   await page.goto("/");
 
   await expect(page.getByRole("button", { name: "Report incident" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: /Start a form/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /Start inspection/ })).toBeDisabled();
 
   await openWorkspaceView(page, testInfo.project.name, "training", "Training");
   await expect(page.getByRole("button", { name: "Assign training" })).toBeDisabled();
@@ -61,7 +61,7 @@ test("company administrator with no active location gets a safe setup state", as
 
   await expect(page.getByText("Create an active company location")).toBeVisible();
   await expect(page.getByRole("button", { name: "Report incident" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: /Start a form/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /Start inspection/ })).toBeDisabled();
 
   await page.getByRole("button", { name: "Open locations" }).click();
   await expect(page.getByRole("button", { name: "Add location" })).toBeEnabled();

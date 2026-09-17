@@ -40,6 +40,12 @@ function fixturePdf(name) {
   };
 }
 
+function futureIsoDate(daysFromToday) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + daysFromToday);
+  return date.toISOString().slice(0, 10);
+}
+
 test.beforeEach(async ({ page }, testInfo) => {
   await openWorkspace(page, {
     cleanEmployeeDocument: testInfo.title.includes("scanned-clean")
@@ -72,7 +78,7 @@ test("committee notes create a traceable action with an employee owner", async (
   await actionDialog.getByLabel("Action").fill("Replace press guard");
   await actionDialog.getByLabel("Owner").selectOption(EMPLOYEE.id);
   await actionDialog.getByLabel("Priority").selectOption({ label: "High" });
-  await actionDialog.getByLabel("Due date").fill("2026-08-10");
+  await actionDialog.getByLabel("Due date").fill(futureIsoDate(14));
   await actionDialog.getByRole("button", { name: "Create action" }).click();
 
   await expect(page.getByText("Corrective action created", { exact: true })).toBeVisible();
@@ -121,7 +127,7 @@ test("training assignment records completion and a retention date", async ({ pag
   await assignmentDialog.getByLabel("Course").selectOption(WORKSPACE_FIXTURE.course.id);
   await assignmentDialog.getByLabel("Location").selectOption(LOCATION.id);
   await assignmentDialog.getByLabel("Employee(s)").selectOption(EMPLOYEE.id);
-  await assignmentDialog.getByLabel("Due date").fill("2026-08-21");
+  await assignmentDialog.getByLabel("Due date").fill(futureIsoDate(30));
   await assignmentDialog.getByLabel("Requirement reason").fill("Powered truck operator authorization");
   await assignmentDialog.getByLabel("Renewal cadence (months)").fill("12");
   await assignmentDialog.getByLabel("Retention (months)").fill("60");
@@ -207,7 +213,7 @@ test("an assigned employee form is completed in a single-use anonymous tablet ha
   await assignmentDialog.getByLabel("Form template").selectOption(
     WORKSPACE_FIXTURE.program.formVersionId
   );
-  await assignmentDialog.getByLabel("Due date").fill("2026-08-14");
+  await assignmentDialog.getByLabel("Due date").fill(futureIsoDate(14));
   await assignmentDialog.getByLabel("Instructions").fill(
     "Hand the tablet to the employee and have them complete every required field."
   );
@@ -394,7 +400,7 @@ test("new employee PDF uploads stay quarantined until malware scanning is clean"
   let documentDialog = page.getByRole("dialog");
   await documentDialog.getByLabel("PDF").setInputFiles(fixturePdf("lockout-acknowledgement.pdf"));
   await documentDialog.getByLabel("Document title").fill("Lockout tagout acknowledgement");
-  await documentDialog.getByLabel("Signature due date").fill("2026-08-12");
+  await documentDialog.getByLabel("Signature due date").fill(futureIsoDate(14));
   await documentDialog.getByLabel("Retention (months)").fill("60");
   await documentDialog.getByLabel("Signature intent").fill(
     "I acknowledge that I received and reviewed this lockout tagout instruction."
