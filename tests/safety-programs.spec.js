@@ -50,7 +50,7 @@ async function requirePrivateLibrary(page) {
 async function expandDriveArchiveFolders(page) {
   const library = page.locator('.import-folder-library[aria-label="Drive folder library"]');
   await expect(library).toBeVisible();
-  await library.locator("details").evaluateAll((folders) => {
+  await library.locator(".import-folder-group, .import-folder-category").evaluateAll((folders) => {
     folders.forEach((folder) => {
       folder.open = true;
     });
@@ -223,7 +223,11 @@ test("Source review shows full original trace and classification filters", async
   await expect(reusableForm.getByText("Reusable form candidate", { exact: true })).toBeVisible();
   await expect(reusableForm.getByText("Verified original PDF · 12 pages", { exact: true })).toBeVisible();
   await expect(reusableForm.getByText("Synthetic source / Operations", { exact: true })).toBeVisible();
+  await expect(reusableForm.getByText("application/pdf", { exact: true })).toBeHidden();
+  await expect(reusableForm.getByText("1".repeat(64), { exact: true })).toBeHidden();
+  await reusableForm.locator(".form-technical-details > summary").click();
   await expect(reusableForm.getByText("application/pdf", { exact: true })).toBeVisible();
+  await expect(reusableForm.getByText("1".repeat(64), { exact: true })).toBeVisible();
   await expect(reusableForm.getByText("340 KB", { exact: true })).toBeVisible();
   await expect(reusableForm.getByText("LOC-01, LOC-02", { exact: true })).toBeVisible();
   await expect(reusableForm).toContainText("1".repeat(64));
@@ -428,7 +432,7 @@ test("Drive archive never certifies a PDF from its filename alone", async ({ pag
 
   await expect(page.getByText("8 source items · 4 verified original PDFs · 26 verified PDF pages", { exact: true })).toBeVisible();
   const mislabeled = page.locator(".import-candidate-card").filter({ hasText: "Mislabeled Photo.pdf" });
-  await expect(mislabeled.getByText("Verified original JPEG · SHA-256 matched", { exact: true })).toBeVisible();
+  await expect(mislabeled.getByText("Verified original JPEG", { exact: true })).toBeVisible();
   await expect(mislabeled).not.toContainText("Verified original PDF");
 });
 
