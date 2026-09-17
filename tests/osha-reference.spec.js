@@ -193,11 +193,11 @@ test("opening a question trace preserves an in-progress inspection", async ({ pa
   await page.goto("/");
   if (testInfo.project.name === "mobile") {
     await page.getByRole("navigation", { name: "Mobile navigation" })
-      .getByRole("button", { name: "Forms", exact: true })
+      .getByRole("button", { name: "Inspect", exact: true })
       .click();
   } else {
     await page.getByLabel("Primary navigation")
-      .getByRole("button", { name: "Forms", exact: true })
+      .getByRole("button", { name: "Inspections", exact: true })
       .click();
   }
 

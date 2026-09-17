@@ -371,6 +371,156 @@ function fakeSupabaseScript(options = {}) {
     tables.company_memberships[0].default_location_id = null;
     tables.company_memberships[0].location_memberships = [];
   }
+  if (options.noCourses) {
+    tables.training_courses = [];
+    tables.training_course_versions = [];
+  }
+  if (options.filterFixtures) {
+    tables.form_templates.push({
+      id: "20000000-0000-4000-8000-000000000010",
+      company_id: WORKSPACE_FIXTURE.company.id,
+      name: "Spill response inspection",
+      category: "Environmental",
+      current_version: 1,
+      active: true,
+      created_at: "2026-07-30T16:05:00.000Z",
+      updated_at: "2026-07-30T16:05:00.000Z",
+      form_template_versions: [{
+        id: "20000000-0000-4000-8000-000000000011",
+        version: 1,
+        published: true,
+        schema_json: {
+          schemaVersion: 1,
+          questions: [{
+            id: "spill-kit-stocked",
+            type: "pass_fail_na",
+            prompt: "Spill kit is stocked and accessible",
+            required: true,
+            requirementIds: []
+          }]
+        }
+      }]
+    });
+    tables.form_template_versions.push({
+      id: "20000000-0000-4000-8000-000000000011",
+      company_id: WORKSPACE_FIXTURE.company.id,
+      template_id: "20000000-0000-4000-8000-000000000010",
+      version: 1,
+      published: true
+    });
+    tables.incidents = [
+      {
+        id: "a0000000-0000-4000-8000-000000000001",
+        company_id: WORKSPACE_FIXTURE.company.id,
+        incident_number: 1001,
+        location_id: WORKSPACE_FIXTURE.locations[0].id,
+        title: "Guarding near miss",
+        incident_type: "Near miss",
+        potential_severity: "medium",
+        occurred_at: "2026-07-29T16:00:00.000Z",
+        status: "submitted",
+        reported_by: AUTH_USER.id,
+        created_at: "2026-07-29T16:05:00.000Z"
+      },
+      {
+        id: "a0000000-0000-4000-8000-000000000002",
+        company_id: WORKSPACE_FIXTURE.company.id,
+        incident_number: 1002,
+        location_id: WORKSPACE_FIXTURE.locations[0].id,
+        title: "Closed first-aid case",
+        incident_type: "Injury",
+        potential_severity: "low",
+        occurred_at: "2026-07-20T16:00:00.000Z",
+        status: "closed",
+        reported_by: AUTH_USER.id,
+        created_at: "2026-07-20T16:05:00.000Z"
+      }
+    ];
+    tables.corrective_actions = [
+      {
+        id: "b0000000-0000-4000-8000-000000000001",
+        company_id: WORKSPACE_FIXTURE.company.id,
+        location_id: WORKSPACE_FIXTURE.locations[0].id,
+        title: "Low-priority label update",
+        source_type: "inspection",
+        assigned_employee_id: WORKSPACE_FIXTURE.employees.unlinked.id,
+        assigned_to: null,
+        due_at: "2031-01-15T17:00:00.000Z",
+        priority: "low",
+        status: "open",
+        created_at: "2026-07-30T16:10:00.000Z"
+      },
+      {
+        id: "b0000000-0000-4000-8000-000000000002",
+        company_id: WORKSPACE_FIXTURE.company.id,
+        location_id: WORKSPACE_FIXTURE.locations[0].id,
+        title: "Critical guarding repair",
+        source_type: "incident",
+        assigned_employee_id: WORKSPACE_FIXTURE.employees.owner.id,
+        assigned_to: AUTH_USER.id,
+        due_at: "2030-01-15T17:00:00.000Z",
+        priority: "critical",
+        status: "open",
+        created_at: "2026-07-30T16:11:00.000Z"
+      }
+    ];
+    tables.documents = [
+      {
+        id: "c0000000-0000-4000-8000-000000000001",
+        company_id: WORKSPACE_FIXTURE.company.id,
+        title: "Machine guarding policy",
+        document_type: "Policy",
+        current_version: 1,
+        owner_profile_id: AUTH_USER.id,
+        acknowledgement_required: false,
+        active: true,
+        review_at: "2030-07-30T16:00:00.000Z",
+        updated_at: "2026-07-30T16:00:00.000Z",
+        document_versions: [{
+          id: "c0000000-0000-4000-8000-000000000011",
+          version: 1,
+          published: true,
+          checksum_sha256: "a".repeat(64)
+        }]
+      },
+      {
+        id: "c0000000-0000-4000-8000-000000000002",
+        company_id: WORKSPACE_FIXTURE.company.id,
+        title: "Incident reporting procedure",
+        document_type: "Procedure",
+        current_version: 1,
+        owner_profile_id: AUTH_USER.id,
+        acknowledgement_required: false,
+        active: true,
+        review_at: "2030-07-30T16:00:00.000Z",
+        updated_at: "2026-07-30T16:01:00.000Z",
+        document_versions: [{
+          id: "c0000000-0000-4000-8000-000000000012",
+          version: 1,
+          published: true,
+          checksum_sha256: "b".repeat(64)
+        }]
+      }
+    ];
+    tables.training_assignments = [{
+      id: "d0000000-0000-4000-8000-000000000001",
+      company_id: WORKSPACE_FIXTURE.company.id,
+      location_id: WORKSPACE_FIXTURE.locations[0].id,
+      course_id: WORKSPACE_FIXTURE.course.id,
+      course_version: WORKSPACE_FIXTURE.course.version,
+      employee_id: WORKSPACE_FIXTURE.employees.owner.id,
+      worker_profile_id: AUTH_USER.id,
+      requirement_id: null,
+      status: "assigned",
+      assigned_at: "2026-07-30T16:15:00.000Z",
+      due_at: "2030-01-31T17:00:00.000Z",
+      completed_at: null,
+      quiz_score: null,
+      valid_until: null,
+      retain_until: null,
+      retention_status: "review_required"
+    }];
+  }
   if (options.importCandidates) {
     const candidateBase = {
       company_id: WORKSPACE_FIXTURE.company.id,
