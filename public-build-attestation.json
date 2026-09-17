@@ -4,8 +4,8 @@
   "files": [
     {
       "path": "app.js",
-      "bytes": 438438,
-      "sha256": "776c772edeee6ecb209d01320820862198737d052e9a6f9c5e1dad99f74aadfe"
+      "bytes": 438450,
+      "sha256": "2cdb179c401392c2c6bc82985e43243cb420dc968e6a5fb7f45cfcf4863cf72e"
     },
     {
       "path": "data.js",
@@ -44,8 +44,8 @@
     },
     {
       "path": "styles.css",
-      "bytes": 147913,
-      "sha256": "241d61e6b2133f924bb335160949e4853bb97a608b759718a116f99360986e36"
+      "bytes": 148555,
+      "sha256": "d93d4d008d019817da176d5e1675cfa269bf0d20072841b048ad58c74463b8a2"
     },
     {
       "path": "supabase-config.js",
@@ -63,7 +63,7 @@
       "sha256": "7e94b62086deecef8c0ba3b38f514e2a1944ff6c81d92fb3ff967828c406c38f"
     }
   ],
-  "aggregateSha256": "4da39921382141e031704db04518504ae88d551468edbf1cb530143d0d4c4282",
+  "aggregateSha256": "8fbcda68df201f6a44ad25be80ef7ed893aa730e08c831431160f4bc182340b4",
   "releaseFiles": [
     {
       "path": ".github/workflows/deploy-pages.yml",
@@ -77,8 +77,8 @@
     },
     {
       "path": "app.js",
-      "bytes": 438438,
-      "sha256": "776c772edeee6ecb209d01320820862198737d052e9a6f9c5e1dad99f74aadfe"
+      "bytes": 438450,
+      "sha256": "2cdb179c401392c2c6bc82985e43243cb420dc968e6a5fb7f45cfcf4863cf72e"
     },
     {
       "path": "data.js",
@@ -297,8 +297,8 @@
     },
     {
       "path": "styles.css",
-      "bytes": 147913,
-      "sha256": "241d61e6b2133f924bb335160949e4853bb97a608b759718a116f99360986e36"
+      "bytes": 148555,
+      "sha256": "d93d4d008d019817da176d5e1675cfa269bf0d20072841b048ad58c74463b8a2"
     },
     {
       "path": "supabase-config.example.js",
@@ -457,8 +457,8 @@
     },
     {
       "path": "tests/safety-programs.spec.js",
-      "bytes": 29081,
-      "sha256": "72058736f6303954517c1a7be70c452a03d11a385edd98ba1c47365ce4c8819b"
+      "bytes": 29437,
+      "sha256": "bbc08ec5e4e56835f3042f38e3e8ee790e2a76ce6f8b4a10223d8498198ea2a1"
     },
     {
       "path": "tests/safety-workflows.spec.js",
@@ -481,5 +481,5 @@
       "sha256": "7e94b62086deecef8c0ba3b38f514e2a1944ff6c81d92fb3ff967828c406c38f"
     }
   ],
-  "releaseAggregateSha256": "2f5663ed842d2ace5e51f73fa2cf2271041304bb41569ea7ebf4a8ad8abcb254"
+  "releaseAggregateSha256": "b38ded5a993f0af89ab5a44aaa65c78c6999ff7a2b7ef28ca44671bc725365a7"
 }

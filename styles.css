@@ -3816,6 +3816,41 @@ a.citation-chip:hover {
   overflow-wrap: anywhere;
 }
 
+.form-technical-details {
+  min-width: 0;
+  margin-top: 8px;
+}
+
+.form-technical-details > summary {
+  display: list-item;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 14px 0;
+  color: var(--muted-strong);
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.form-technical-details > summary:hover {
+  color: var(--ink);
+}
+
+.form-technical-details > summary:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+.form-technical-details > .import-trace-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.pdf-preview-footer > .form-technical-details {
+  flex: 1;
+  margin: 0;
+}
+
 .full-trace-hash {
   display: block;
   color: inherit;

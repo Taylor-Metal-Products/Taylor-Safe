@@ -4110,7 +4110,7 @@
       "image/png": "PNG",
       "image/x-adobe-dng": "DNG"
     })[item.mimeType] || "source file";
-    return `Verified original ${format} · SHA-256 matched`;
+    return `Verified original ${format}`;
   }
 
   function formatFileSize(bytes) {
@@ -4509,6 +4509,19 @@
     `;
   }
 
+  function renderFormTechnicalDetails(fields) {
+    return `
+      <details class="form-technical-details">
+        <summary>Technical details</summary>
+        <dl class="import-trace-grid">
+          ${fields.map(([label, value]) => `
+            <div><dt>${escapeHtml(label)}</dt><dd><code class="full-trace-hash">${escapeHtml(value || "Pending")}</code></dd></div>
+          `).join("")}
+        </dl>
+      </details>
+    `;
+  }
+
   function renderOriginalFormCard(item) {
     const original = item.originalFile;
     const tags = item.citations || [];
@@ -4528,10 +4541,9 @@
           <span>${escapeHtml(original.access)}</span>
           <span>Tenant authorized</span>
         </div>
+        ${renderFormTechnicalDetails([["Source manifest SHA-256", item.sourceManifestSha256]])}
         <div class="program-card-footer">
-          <span class="program-version" title="${escapeHtml(item.sourceManifestSha256 || "")}">${item.sourceManifestSha256
-            ? `Source manifest · ${escapeHtml(item.sourceManifestSha256.slice(0, 12))}…`
-            : "Source manifest pending"}</span>
+          <span class="program-version">${escapeHtml(item.version)}</span>
           <div class="program-card-actions">
             <button class="button small" type="button" data-action="download-form-original" data-form-id="${escapeHtml(item.id)}">Download original</button>
             <button class="button small primary" type="button" data-action="start-program-form" data-form-id="${escapeHtml(item.id)}" ${formAvailableForSubmission(item) ? "" : "disabled"}>Use template</button>
@@ -4562,8 +4574,9 @@
           <span>Uploaded ${escapeHtml(created)}</span>
           <span>${escapeHtml(item.syncStatus === "local_only" ? "Awaiting private Supabase sync" : item.syncStatus)}</span>
         </div>
+        ${renderFormTechnicalDetails([["Content SHA-256", item.sha256]])}
         <div class="program-card-footer">
-          <span class="program-version" title="${escapeHtml(item.sha256)}">SHA-256 · ${escapeHtml(String(item.sha256 || "").slice(0, 12))}…</span>
+          <span class="program-version">Local copy</span>
           <div class="program-card-actions">
             <button class="button small primary" type="button" data-action="download-form-upload" data-upload-id="${escapeHtml(item.id)}">Download copy</button>
           </div>
@@ -4611,16 +4624,17 @@
         <h3>${escapeHtml(item.displayName)}</h3>
         <p class="import-original-status ${verifiedOriginal ? "verified" : "pending"}">${escapeHtml(importCandidateOriginalLabel(item))}</p>
         ${sensitivity === "restricted" ? `<p class="restricted-source-warning">Restricted personnel or sensitive safety record. Reconfirm business need before downloading.</p>` : ""}
-        <dl class="import-trace-grid" aria-label="Source snapshot trace">
-          <div><dt>Filename</dt><dd>${escapeHtml(item.displayName)}</dd></div>
-          <div><dt>Folder hint</dt><dd>${escapeHtml(item.folderHint)}</dd></div>
-          <div><dt>MIME</dt><dd>${escapeHtml(item.mimeType)}</dd></div>
-          <div><dt>Bytes</dt><dd>${escapeHtml(formatFileSize(item.sizeBytes))}</dd></div>
-          <div><dt>Content SHA-256</dt><dd><code class="full-trace-hash">${escapeHtml(contentSha)}</code></dd></div>
-          <div><dt>Source path fingerprint</dt><dd><code class="full-trace-hash">${escapeHtml(sourcePathSha)}</code></dd></div>
+        <dl class="import-trace-grid" aria-label="File information">
+          <div><dt>Folder</dt><dd>${escapeHtml(item.folderHint)}</dd></div>
+          <div><dt>File size</dt><dd>${escapeHtml(formatFileSize(item.sizeBytes))}</dd></div>
           <div><dt>Language</dt><dd>${escapeHtml(item.language)}</dd></div>
           <div><dt>Proposed locations (unapproved)</dt><dd>${escapeHtml(proposedLocations)}</dd></div>
         </dl>
+        ${renderFormTechnicalDetails([
+          ["MIME type", item.mimeType],
+          ["Content SHA-256", contentSha],
+          ["Source path fingerprint", sourcePathSha]
+        ])}
         ${canManageCompany() ? `
           <form class="candidate-review-form" data-candidate-review-form="${escapeHtml(item.id)}" aria-label="Access and review controls for ${escapeHtml(item.displayName)}">
             <input type="hidden" name="candidate_id" value="${escapeHtml(item.id)}">
@@ -5079,7 +5093,7 @@
             <iframe src="${escapeHtml(original.path)}#view=FitH" title="${escapeHtml(form.title)} PDF preview"></iframe>
           </div>
           <footer class="modal-footer pdf-preview-footer">
-            <span class="file-fingerprint" title="${escapeHtml(original.sha256)}">SHA-256 · ${escapeHtml(String(original.sha256 || "").slice(0, 16))}…</span>
+            ${renderFormTechnicalDetails([["Content SHA-256", original.sha256]])}
             <div class="program-card-actions">
               <a class="button" href="${escapeHtml(original.path)}" target="_blank" rel="noopener noreferrer">Open in new tab</a>
               <a class="button primary" href="${escapeHtml(original.path)}" download="${escapeHtml(original.filename)}">Download PDF</a>
