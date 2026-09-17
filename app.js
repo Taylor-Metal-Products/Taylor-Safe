@@ -95,6 +95,13 @@
     actionSort: "priority",
     documentType: "all",
     peopleReadiness: "all",
+    calendarView: window.matchMedia("(max-width: 700px)").matches ? "agenda" : "month",
+    calendarDate: "",
+    calendarSelectedDate: "",
+    calendarEmployee: "all",
+    calendarStatus: "all",
+    calendarIncomplete: false,
+    calendarTypes: ["training", "committee", "action", "form", "inspection", "document"],
     localFormUploads: [],
     programDrawerId: null,
     employeeDrawerId: null,
@@ -183,6 +190,7 @@
       label: "Today",
       items: [
         { id: "dashboard", label: "Today", icon: "01" },
+        { id: "calendar", label: "Calendar", icon: "▦" },
         { id: "my-work", label: "Safety monitor", icon: "✓" }
       ]
     },
@@ -224,6 +232,11 @@
       eyebrow: "Company work inbox",
       title: "Safety monitor",
       description: "Track scheduled work, employee signatures, follow-ups, and completed records in one place."
+    },
+    calendar: {
+      eyebrow: "Company schedule",
+      title: "Calendar",
+      description: "See safety deadlines, committee meetings, and employee work together."
     },
     inspections: {
       eyebrow: "Field assurance",
@@ -760,14 +773,17 @@
       || data.locations.some((location) => location.id === locationId);
   }
 
-  function formatShortDate(value, fallback = "Not scheduled") {
+  function formatShortDate(value, fallback = "Not scheduled", timeZone) {
     if (!value) return fallback;
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return fallback;
+    const zone = /^\d{4}-\d{2}-\d{2}$/.test(value) ? "UTC" : timeZone;
+    const yearFormat = new Intl.DateTimeFormat("en-US", { year: "numeric", timeZone: zone });
     return new Intl.DateTimeFormat("en-US", {
+      timeZone: zone,
       month: "short",
       day: "numeric",
-      year: date.getFullYear() === new Date().getFullYear() ? undefined : "numeric"
+      year: yearFormat.format(date) === yearFormat.format(new Date()) ? undefined : "numeric"
     }).format(date);
   }
 
@@ -1008,6 +1024,12 @@
     state.selectedTemplateId = null;
     state.localFormUploads = [];
     state.handoffRefreshPending = false;
+    state.calendarEmployee = "all";
+    state.calendarDate = "";
+    state.calendarSelectedDate = "";
+    state.calendarIncomplete = false;
+    calendarReturnKey = null;
+    calendarReturnInDayPanel = false;
   }
 
   async function loadAuthenticatedWorkspace(user, transitionEpoch = authTransitionEpoch) {
@@ -1343,6 +1365,13 @@
       const rawMembers = membersResult.data || [];
       const rawRole = membership.role || "worker";
       const rawAssignments = trainingAssignmentsResult.data || [];
+      state.calendarIncomplete = [
+        [inspectionsResult, 100], [actionsResult, 150], [trainingAssignmentsResult, 1000],
+        [committeeMeetingsResult, 500], [employeeFormAssignmentsResult, 2000], [employeeDocumentsResult, 2000]
+      ].some(([result, limit]) => (result.data || []).length >= limit);
+      const formatLocationDate = (value, locationId, fallback) => formatShortDate(value, fallback,
+        (locationsResult.data || []).find((location) => location.id === locationId)?.timezone
+          || companyResult.data.timezone || "America/Los_Angeles");
       const rawTrainingRequirements = trainingRequirementsResult.data || [];
       const rawTrainingCompletions = trainingCompletionsResult.data || [];
       const rawEmployees = employeesResult.data || [];
@@ -1523,7 +1552,9 @@
           assignee: inspection.submitted_at ? "Signed submission" : "Draft owner",
           score: inspection.score === null ? null : Number(inspection.score),
           status: readableStatus(inspection.status),
-          due: formatShortDate(inspection.scheduled_for || inspection.submitted_at || inspection.created_at),
+          due: formatLocationDate(inspection.scheduled_for || inspection.submitted_at || inspection.created_at, inspection.location_id),
+          scheduledFor: inspection.scheduled_for,
+          rawStatus: inspection.status,
           submittedAt: inspection.submitted_at,
           findings,
           regulatorySnapshot: inspection.responses?.regulatorySnapshot || null,
@@ -1585,14 +1616,15 @@
         source: readableStatus(action.source_type),
         sourceId: action.source_id,
         committeeMeetingId: action.committee_meeting_id,
-        ownerId: action.assigned_employee_id,
+        ownerId: action.assigned_employee_id || data.people.find((person) => person.userId === action.assigned_to)?.id || null,
         owner: data.people.find((person) => person.id === action.assigned_employee_id)?.name
           || memberNameById.get(action.assigned_to)
           || "Unassigned",
         locationId: action.location_id,
-        due: formatShortDate(action.due_at),
+        due: formatLocationDate(action.due_at, action.location_id),
         dueAt: action.due_at,
         priority: readableStatus(action.priority),
+        rawStatus: action.status,
         status: readableStatus(action.status),
         requiredEvidence: action.required_evidence || "",
         closeoutNote: action.closeout_note || "",
@@ -1650,12 +1682,13 @@
           courseId: assignment.course_id,
           course: data.courses.find((course) => course.id === assignment.course_id)?.name || "Training course",
           courseVersion: assignment.course_version,
+          rawStatus: assignment.status,
           requirementId: assignment.requirement_id,
           reason: requirement?.reason || "Company safety requirement",
           assignedAt: assignment.assigned_at,
           assigned: formatShortDate(assignment.assigned_at),
           dueAt: assignment.due_at,
-          due: formatShortDate(assignment.due_at),
+          due: formatLocationDate(assignment.due_at, assignment.location_id),
           completedAt: assignment.completed_at,
           validUntil: completion?.validUntil || assignment.valid_until,
           retainUntil: completion?.retainUntil || assignment.retain_until,
@@ -1708,7 +1741,7 @@
           malwareScanStatus: readableStatus(documentRecord.malware_scan_status),
           signatureIntent: documentRecord.signature_intent,
           signatureDueAt: documentRecord.signature_due_at,
-          signatureDue: formatShortDate(documentRecord.signature_due_at, "No due date"),
+          signatureDue: formatLocationDate(documentRecord.signature_due_at, documentRecord.location_id, "No due date"),
           retentionBasis: documentRecord.retention_basis || { status: "review_required" },
           retainUntil: documentRecord.retain_until,
           retainThrough: formatShortDate(documentRecord.retain_until, "Policy review required"),
@@ -1764,7 +1797,7 @@
             ? "Overdue"
             : readableStatus(assignment.status),
           dueAt: assignment.due_at,
-          due: formatShortDate(assignment.due_at, "No due date"),
+          due: formatLocationDate(assignment.due_at, assignment.location_id, "No due date"),
           assignedAt: assignment.assigned_at,
           startedAt: assignment.started_at,
           completedAt: assignment.completed_at,
@@ -2293,6 +2326,7 @@
         return {
           id: location.id,
           name: location.name,
+          timezone: location.timezone || data.company.timezone,
           short: location.code,
           city: location.address || "Address not set",
           type: index === 0 ? "Primary location" : "Company location",
@@ -2883,7 +2917,7 @@
       { id: "inspections", label: "Inspect", icon: "I" },
       { id: "training", label: "Train", icon: "T" },
       { id: "programs", label: "Library", icon: "L", libraryCategory: "forms" },
-      { id: "my-work", label: "Monitor", icon: "✓" }
+      { id: "calendar", label: "Calendar", icon: "▦" }
     ];
     return `
       <nav class="mobile-nav" aria-label="Mobile navigation">
@@ -2915,6 +2949,9 @@
     ));
     const reviewSourceFormsButton = `<button class="button" type="button" data-action="open-library" data-category="forms" data-mode="archive" data-kind="form_candidate">Review source forms</button>`;
     if (view === "dashboard") return "";
+    if (view === "calendar") return canWriteLocation()
+      ? `<button class="button primary" type="button" data-action="calendar-create">+ Add activity</button>`
+      : "";
     if (view === "my-work") {
       return `
         <button class="button" type="button" ${canReport ? "" : "disabled"} data-action="open-modal" data-modal="incident">Report incident</button>
@@ -3608,6 +3645,338 @@
     `;
   }
 
+  const calendarKinds = [
+    { id: "training", label: "Training" },
+    { id: "committee", label: "Committee meetings" },
+    { id: "action", label: "Action items" },
+    { id: "form", label: "Employee forms" },
+    { id: "inspection", label: "Inspections" },
+    { id: "document", label: "Document signatures" }
+  ];
+  let calendarReturnKey = null;
+  let calendarReturnInDayPanel = false;
+
+  function calendarTimezone(locationId = state.locationId) {
+    const timezone = locationById(locationId)?.timezone || data.company?.timezone || "America/Los_Angeles";
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+      return timezone;
+    } catch (_error) {
+      return "America/Los_Angeles";
+    }
+  }
+
+  // Date-only values are calendar dates, not UTC timestamps. Do arithmetic in UTC
+  // so a daylight-saving transition cannot add or remove a day in the grid.
+  function calendarDateKey(value, timezone = calendarTimezone()) {
+    if (!value) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      const parsed = new Date(`${value}T12:00:00Z`);
+      return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : "";
+    }
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return "";
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(date);
+    const part = (type) => parts.find((item) => item.type === type)?.value;
+    return `${part("year")}-${part("month")}-${part("day")}`;
+  }
+
+  function calendarToday() {
+    return calendarDateKey(new Date().toISOString());
+  }
+
+  function endOfLocationDay(date, locationId) {
+    if (!calendarDateKey(date)) throw new Error("Choose a valid due date.");
+    const timezone = calendarTimezone(locationId);
+    const target = Date.parse(`${date}T23:59:59Z`);
+    let timestamp = target;
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"
+    });
+    // Match the location's wall-clock end of day, including its DST offset.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const parts = formatter.formatToParts(new Date(timestamp));
+      const part = (type) => Number(parts.find((item) => item.type === type)?.value);
+      const wallClock = Date.UTC(part("year"), part("month") - 1, part("day"), part("hour"), part("minute"), part("second"));
+      const adjustment = target - wallClock;
+      if (!adjustment) return new Date(timestamp).toISOString();
+      timestamp += adjustment;
+    }
+    throw new Error("The due date could not be resolved in the location’s time zone.");
+  }
+
+  function calendarShift(date, days = 0, months = 0) {
+    const result = new Date(`${date}T12:00:00Z`);
+    if (months) {
+      const originalDay = result.getUTCDate();
+      result.setUTCDate(1);
+      result.setUTCMonth(result.getUTCMonth() + months);
+      const lastDay = new Date(Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0)).getUTCDate();
+      result.setUTCDate(Math.min(originalDay, lastDay));
+    }
+    result.setUTCDate(result.getUTCDate() + days);
+    return result.toISOString().slice(0, 10);
+  }
+
+  function calendarLabel(date, options = { weekday: "long", month: "long", day: "numeric", year: "numeric" }) {
+    return new Intl.DateTimeFormat("en-US", { ...options, timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`));
+  }
+
+  function calendarEvents() {
+    const events = [];
+    const add = (kind, record, title, dateValue, employeeIds, owner, description, dateLabel = "Due date") => {
+      const timezone = calendarTimezone(record.locationId);
+      const date = calendarDateKey(dateValue, timezone);
+      const companyWide = kind === "committee" && record.scope === "company";
+      if (!date || (!record.locationId && !companyWide)) return;
+      const rawStatus = String(record.rawStatus || record.status || "").toLowerCase().replaceAll("_", " ");
+      const completeStatuses = {
+        training: ["complete", "completed"], committee: ["finalized"], action: ["closed"],
+        form: ["completed"], inspection: ["submitted", "complete", "closed"], document: ["signed"]
+      };
+      const complete = completeStatuses[kind].includes(rawStatus);
+      const resolved = complete || ["cancelled", "waived", "void", "rejected"].includes(rawStatus);
+      const overdue = !resolved && kind !== "committee" && (rawStatus === "expired" || date < calendarDateKey(new Date().toISOString(), timezone));
+      const timed = kind === "inspection" && !/^\d{4}-\d{2}-\d{2}$/.test(dateValue);
+      const timeLabel = timed ? new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone, hour: "numeric", minute: "2-digit", timeZoneName: "short"
+      }).format(new Date(dateValue)) : "";
+      events.push({
+        key: `${kind}:${record.id}`, kind, record, title, date, dateValue, dateLabel,
+        employeeIds: employeeIds.filter(Boolean), owner, description,
+        locationId: record.locationId, locationLabel: companyWide ? "Company-wide" : locationName(record.locationId),
+        companyWide, timezone, complete, resolved, overdue, timeLabel, sortAt: timed ? Date.parse(dateValue) : null,
+        status: overdue ? "Overdue" : kind === "committee" && rawStatus === "draft" ? "Draft minutes" : record.status,
+        kindLabel: calendarKinds.find((item) => item.id === kind).label
+      });
+    };
+    data.trainingAssignments.forEach((item) => add("training", item, item.course, item.dueAt, [item.employeeId], item.employee, item.reason));
+    data.committeeMeetings.forEach((item) => add("committee", item, item.title, item.meetingDate,
+      [item.chairEmployeeId, ...item.attendees.map((person) => person.employeeId)], item.chair, item.agenda, "Meeting date"));
+    data.actions.forEach((item) => add("action", item, item.title, item.dueAt, [item.ownerId], item.owner, item.description));
+    data.employeeFormAssignments.forEach((item) => add("form", item, item.title || item.formTitle, item.dueAt, [item.employeeId], item.employee, item.instructions));
+    data.inspections.forEach((item) => add("inspection", item, item.template, item.scheduledFor,
+      [], "Location inspection", "", "Scheduled date"));
+    data.employeeDocuments.filter((item) => item.kind === "signature_request").forEach((item) => add("document", item, item.title,
+      item.signatureDueAt, [item.employeeId], item.employee, item.signatureIntent));
+    return events.sort((left, right) => left.date.localeCompare(right.date)
+      || Number(left.sortAt !== null) - Number(right.sortAt !== null) || (left.sortAt || 0) - (right.sortAt || 0)
+      || Number(left.resolved) - Number(right.resolved) || left.title.localeCompare(right.title) || left.key.localeCompare(right.key));
+  }
+
+  function calendarInScope(event) {
+    return state.locationId === "all" || event.companyWide || event.locationId === state.locationId;
+  }
+
+  function filteredCalendarEvents() {
+    return calendarEvents().filter((event) => (
+      calendarInScope(event) && state.calendarTypes.includes(event.kind)
+      && (state.calendarEmployee === "all" || event.employeeIds.includes(state.calendarEmployee))
+      && (state.calendarStatus === "all"
+        || (state.calendarStatus === "open" && !event.resolved)
+        || (state.calendarStatus === "overdue" && event.overdue)
+        || (state.calendarStatus === "complete" && event.resolved))
+    ));
+  }
+
+  function calendarRange() {
+    const date = state.calendarDate || calendarToday();
+    if (state.calendarView === "week") {
+      const start = calendarShift(date, -new Date(`${date}T12:00:00Z`).getUTCDay());
+      return { start, end: calendarShift(start, 6) };
+    }
+    const start = `${date.slice(0, 7)}-01`;
+    return { start, end: calendarShift(calendarShift(start, 0, 1), -1) };
+  }
+
+  function renderCalendarEvent(event, compact = false) {
+    const description = [event.kindLabel, event.title, event.timeLabel, event.owner, event.status, calendarLabel(event.date)].filter(Boolean).join(" · ");
+    return `<button type="button" class="calendar-event kind-${event.kind}${event.complete ? " is-complete" : ""}${event.overdue ? " is-overdue" : ""}"
+      data-action="calendar-event" data-calendar-event="${escapeHtml(event.key)}" aria-label="${escapeHtml(description)}" title="${escapeHtml(description)}">
+      <span class="calendar-event-title">${event.complete ? "✓ " : event.overdue ? "! " : ""}${event.timeLabel ? `${escapeHtml(event.timeLabel)} · ` : ""}${escapeHtml(event.title)}</span>
+      <span class="calendar-event-meta">${escapeHtml(compact ? event.owner : `${event.kindLabel} · ${event.owner} · ${event.locationLabel} · ${event.status}`)}</span>
+    </button>`;
+  }
+
+  function renderCalendarMiniMonth() {
+    const first = `${state.calendarDate.slice(0, 7)}-01`;
+    const start = calendarShift(first, -new Date(`${first}T12:00:00Z`).getUTCDay());
+    return `<div class="calendar-mini-month">
+      <h3 class="calendar-mini-heading">${escapeHtml(calendarLabel(first, { month: "long", year: "numeric" }))}</h3>
+      <div class="calendar-mini-grid">
+        ${["S", "M", "T", "W", "T", "F", "S"].map((day) => `<span aria-hidden="true">${day}</span>`).join("")}
+        ${Array.from({ length: 42 }, (_, index) => {
+          const date = calendarShift(start, index);
+          return `<button type="button" data-action="calendar-day" data-calendar-date="${date}" aria-label="View ${escapeHtml(calendarLabel(date))}" class="${date === calendarToday() ? "is-today " : ""}${date === state.calendarSelectedDate ? "is-selected " : ""}${date.slice(0, 7) !== first.slice(0, 7) ? "is-outside" : ""}" ${date === calendarToday() ? 'aria-current="date"' : ""}>${Number(date.slice(-2))}</button>`;
+        }).join("")}
+      </div>
+    </div>`;
+  }
+
+  function renderCalendarMonth(events, range) {
+    const start = calendarShift(range.start, -new Date(`${range.start}T12:00:00Z`).getUTCDay());
+    return `<div class="calendar-month-grid" aria-label="Month calendar">
+      ${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => `<div class="calendar-weekday">${day}</div>`).join("")}
+      ${Array.from({ length: 42 }, (_, index) => {
+        const date = calendarShift(start, index);
+        const items = events.filter((event) => event.date === date);
+        return `<div class="calendar-day${date === calendarToday() ? " is-today" : ""}${date === state.calendarSelectedDate ? " is-selected" : ""}${date < range.start || date > range.end ? " is-outside" : ""}">
+          <button type="button" class="calendar-day-number" data-action="calendar-day" data-calendar-date="${date}" aria-label="View ${escapeHtml(calendarLabel(date))}" ${date === calendarToday() ? 'aria-current="date"' : ""}>${Number(date.slice(-2))}</button>
+          <div class="calendar-day-events">${items.slice(0, 3).map((event) => renderCalendarEvent(event, true)).join("")}</div>
+          ${items.length > 3 ? `<button class="calendar-more" type="button" data-action="calendar-day" data-calendar-date="${date}">+${items.length - 3} more</button>` : ""}
+        </div>`;
+      }).join("")}
+    </div>`;
+  }
+
+  function renderCalendarWeek(events, range) {
+    return `<div class="calendar-week-grid" aria-label="Week calendar">${Array.from({ length: 7 }, (_, index) => {
+      const date = calendarShift(range.start, index);
+      const items = events.filter((event) => event.date === date);
+      return `<section class="calendar-week-day${date === calendarToday() ? " is-today" : ""}">
+        <h3><button class="calendar-day-number" type="button" data-action="calendar-day" data-calendar-date="${date}" aria-label="View ${escapeHtml(calendarLabel(date))}"><span class="calendar-week-label">${escapeHtml(calendarLabel(date, { weekday: "short" }))}</span><span class="calendar-week-date">${Number(date.slice(-2))}</span></button></h3>
+        <div class="calendar-day-events">${items.map((event) => renderCalendarEvent(event)).join("") || '<p class="calendar-context">No activities</p>'}</div>
+      </section>`;
+    }).join("")}</div>`;
+  }
+
+  function renderCalendarAgenda(events) {
+    return `<div class="calendar-agenda" aria-label="Calendar agenda">${[...new Set(events.map((event) => event.date))].map((date) => `
+      <section class="calendar-agenda-day"><h3>${escapeHtml(calendarLabel(date, { weekday: "short", month: "short", day: "numeric" }))}</h3>
+      <div class="calendar-agenda-events">${events.filter((event) => event.date === date).map((event) => renderCalendarEvent(event)).join("")}</div></section>
+    `).join("")}</div>`;
+  }
+
+  function renderCalendar() {
+    if (!calendarDateKey(state.calendarDate)) state.calendarDate = calendarToday();
+    const range = calendarRange();
+    const allEvents = filteredCalendarEvents();
+    const events = allEvents.filter((event) => event.date >= range.start && event.date <= range.end);
+    const people = filterLocation(data.people);
+    const rangeLabel = state.calendarView === "week"
+      ? `${calendarLabel(range.start, { month: "short", day: "numeric" })} – ${calendarLabel(range.end, { month: "short", day: "numeric", year: "numeric" })}`
+      : calendarLabel(range.start, { month: "long", year: "numeric" });
+    return `${renderPageHeading()}
+      <section class="safety-calendar" aria-label="Safety calendar">
+        <div class="calendar-toolbar">
+          <div class="calendar-navigation"><button class="button" data-action="calendar-today" type="button">Today</button>
+            <button class="icon-button" data-action="calendar-period" data-direction="-1" type="button" aria-label="Previous period">‹</button>
+            <button class="icon-button" data-action="calendar-period" data-direction="1" type="button" aria-label="Next period">›</button>
+            <h2 class="calendar-range" aria-live="polite">${escapeHtml(rangeLabel)}</h2>
+          </div>
+          <div class="calendar-view-switch" aria-label="Calendar view">${["month", "week", "agenda"].map((view) => `<button type="button" data-action="calendar-view" data-calendar-view="${view}" aria-pressed="${state.calendarView === view}">${readableStatus(view)}</button>`).join("")}</div>
+        </div>
+        <div class="calendar-layout">
+          <aside class="calendar-sidebar" aria-label="Calendar filters">
+            <label class="calendar-select">Go to date<input id="calendar-jump" type="date" value="${state.calendarDate}" aria-label="Go to date"></label>
+            ${renderCalendarMiniMonth()}
+            <fieldset class="calendar-filter-group"><legend>Activities</legend>${calendarKinds.map((kind) => `<label class="calendar-type-option"><input type="checkbox" data-calendar-kind="${kind.id}" ${state.calendarTypes.includes(kind.id) ? "checked" : ""}><span class="calendar-dot kind-${kind.id}" aria-hidden="true"></span>${kind.label}</label>`).join("")}</fieldset>
+            <label class="calendar-select">Employee<select id="calendar-employee" aria-label="Filter calendar by employee"><option value="all">All employees</option>${people.map((person) => `<option value="${escapeHtml(person.id)}" ${state.calendarEmployee === person.id ? "selected" : ""}>${escapeHtml(person.name)}</option>`).join("")}</select></label>
+            <label class="calendar-select">Status<select id="calendar-status" aria-label="Filter calendar by status">${[["all", "All statuses"], ["open", "Open"], ["overdue", "Overdue"], ["complete", "Completed / resolved"]].map(([value, label]) => `<option value="${value}" ${state.calendarStatus === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+          </aside>
+          <div class="calendar-main">
+            ${state.calendarIncomplete ? '<p class="calendar-context" role="status">The workspace record limit has been reached. This calendar may not show all scheduled work.</p>' : ""}
+            <p class="calendar-context">${events.length} activit${events.length === 1 ? "y" : "ies"} this ${state.calendarView === "week" ? "week" : "month"} · ${escapeHtml(activeLocation()?.name || "All locations")} · ${activeLocation() ? escapeHtml(calendarTimezone().replaceAll("_", " ")) : "Dates use each location’s time zone"}</p>
+            ${state.calendarView === "month" ? renderCalendarMonth(allEvents, range) : state.calendarView === "week" ? renderCalendarWeek(events, range) : renderCalendarAgenda(events)}
+            ${!events.length ? `<div class="calendar-empty"><h3>No activities in this ${state.calendarView === "week" ? "week" : "month"}</h3><p>Try another date or filter. Dated meetings, assignments, signatures, and action items appear here as they are recorded.</p></div>` : ""}
+            ${state.calendarSelectedDate ? `<section class="calendar-day-panel" aria-label="Activities for ${escapeHtml(calendarLabel(state.calendarSelectedDate))}"><header><h3>${escapeHtml(calendarLabel(state.calendarSelectedDate))}</h3><button class="icon-button" type="button" data-action="calendar-close-day" aria-label="Close day details">×</button></header>
+              <div class="calendar-day-events">${allEvents.filter((event) => event.date === state.calendarSelectedDate).map((event) => renderCalendarEvent(event)).join("") || '<p class="calendar-context">No activities for this date and these filters.</p>'}</div>
+              ${canWriteLocation() ? '<button class="button" type="button" data-action="calendar-create">+ Add activity on this date</button>' : ""}
+            </section>` : ""}
+            <p class="calendar-context">Deadlines stay on their due date, including completed work. Items without a date are available in their registers.</p>
+          </div>
+        </div>
+      </section>`;
+  }
+
+  function renderCalendarRecordModal() {
+    const event = calendarEvents().find((item) => calendarInScope(item) && item.key === state.modalContext.eventKey);
+    if (!event) return "";
+    const record = event.record;
+    const fact = (label, value) => value ? `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>` : "";
+    const note = (label, value) => value ? `<section class="calendar-record-note"><h3>${escapeHtml(label)}</h3><p>${escapeHtml(value)}</p></section>` : "";
+    const employee = ["form", "document"].includes(event.kind) ? data.people.find((person) => person.id === record.employeeId) : null;
+    return `<div class="modal-backdrop" data-action="backdrop-close"><section class="modal calendar-record-details" role="dialog" aria-modal="true" aria-labelledby="calendar-record-title">
+      <header class="modal-header"><div><p class="section-kicker">${escapeHtml(event.kindLabel)}</p><h2 id="calendar-record-title">${escapeHtml(event.title)}</h2></div><button class="icon-button" type="button" data-action="close-modal" aria-label="Close dialog">×</button></header>
+      <div class="modal-body"><dl class="calendar-record-facts">
+        ${fact(event.dateLabel, calendarLabel(event.date))}${fact("Location", event.locationLabel)}${fact(event.kind === "committee" ? "Chair" : "Employee / owner", event.owner)}${fact("Status", event.status)}
+        ${event.kind === "inspection" ? fact("Scheduled time", new Intl.DateTimeFormat("en-US", { timeZone: event.timezone, hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(event.dateValue))) : ""}
+        ${fact("Priority", record.priority)}${record.completedAt ? fact("Completed", formatShortDate(record.completedAt)) : ""}${record.signedAt ? fact("Signed", formatShortDate(record.signedAt)) : ""}${fact("Retain through", record.retainThrough)}
+        ${event.kind === "committee" ? fact("Attendees", record.attendees.map((person) => `${person.employee} (${person.status})`).join(", ") || "No attendees recorded") : ""}
+        ${event.kind === "inspection" ? fact("Findings", String(record.findings)) : ""}
+      </dl>${note(event.kind === "committee" ? "Agenda" : "Details", event.description)}${note("Meeting notes", record.notes)}${note("Decisions", record.decisions)}${note("Required evidence", record.requiredEvidence)}${note("Closeout note", record.closeoutNote)}
+      ${event.kind === "form" && record.submission ? note("Completion receipt", `Completed by ${record.submission.employeeName} on ${record.submission.submitted}.`) : ""}
+      </div><footer class="modal-footer">
+        <button class="button" type="button" data-action="close-modal">Close</button>
+        ${employee ? `<button class="button primary" type="button" data-action="calendar-source" data-calendar-event="${escapeHtml(event.key)}">Open employee record</button>` : !["form", "document"].includes(event.kind) ? `<button class="button primary" type="button" data-action="calendar-source" data-calendar-event="${escapeHtml(event.key)}">Open record</button>` : ""}
+        ${event.kind === "training" && !event.resolved && canWriteLocation(event.locationId) ? `<button class="button primary" type="button" data-action="open-modal" data-modal="training-completion" data-assignment-id="${escapeHtml(record.id)}">Record completion</button>` : ""}
+      </footer>
+    </section></div>`;
+  }
+
+  function renderCalendarCreateModal() {
+    const date = state.calendarSelectedDate || state.calendarDate || calendarToday();
+    const canTrain = data.courses.some((course) => course.published && course.currentVersionId);
+    const canAssignForm = allFormTemplates().some((template) => formAvailableForSubmission(template)
+      && (state.locationId === "all" || template.locations?.includes(state.locationId))
+      && !(template.fields || []).some((field) => field.databaseType === "file"));
+    return `<div class="modal-backdrop" data-action="backdrop-close"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="calendar-create-title">
+      <header class="modal-header"><div><p class="section-kicker">${escapeHtml(calendarLabel(date))}</p><h2 id="calendar-create-title">Add safety activity</h2><p>Choose the work to record or assign.</p></div><button class="icon-button" type="button" data-action="close-modal" aria-label="Close dialog">×</button></header>
+      <div class="modal-body calendar-create-options">
+        <button class="button" type="button" data-action="calendar-create-type" data-modal="committee">Record committee meeting</button>
+        <button class="button" type="button" data-action="calendar-create-type" data-modal="action">Create action item</button>
+        <button class="button" type="button" data-action="calendar-create-type" data-modal="employee-document">Request document signature</button>
+        ${canTrain ? '<button class="button" type="button" data-action="calendar-create-type" data-modal="training">Assign training</button>' : '<p class="calendar-context">Publish a training course before assigning training.</p>'}
+        ${canAssignForm ? '<button class="button" type="button" data-action="calendar-create-type" data-modal="employee-form-assignment">Assign employee form</button>' : '<p class="calendar-context">Publish an applicable form before assigning employee forms.</p>'}
+      </div><footer class="modal-footer"><button class="button" type="button" data-action="close-modal">Cancel</button></footer>
+    </section></div>`;
+  }
+
+  function finishDatedWorkflow(kind, date, locationId, fallbackView) {
+    const fromCalendar = Boolean(state.modalContext.calendarDate);
+    state.modal = null;
+    state.modalContext = {};
+    if (fromCalendar) {
+      state.view = "calendar";
+      state.calendarDate = calendarDateKey(date) || state.calendarDate;
+      state.calendarSelectedDate = state.calendarDate;
+      state.calendarTypes = [...new Set([...state.calendarTypes, kind])];
+      state.calendarEmployee = "all";
+      state.calendarStatus = "all";
+      if (state.locationId !== "all") state.locationId = locationId;
+    } else if (fallbackView) {
+      state.view = fallbackView;
+    }
+    return fromCalendar;
+  }
+
+  function focusCalendarRecord(key) {
+    const record = [...document.querySelectorAll("[data-calendar-record]")].find((element) => element.dataset.calendarRecord === key);
+    record?.scrollIntoView({ block: "center", behavior: "smooth" });
+    record?.focus({ preventScroll: true });
+  }
+
+  function openCalendarSource(key) {
+    const event = calendarEvents().find((item) => calendarInScope(item) && item.key === key);
+    if (!event) return;
+    if (["form", "document"].includes(event.kind)) {
+      state.modal = null;
+      state.modalContext = {};
+      state.employeeDrawerId = event.record.employeeId;
+      render();
+      requestAnimationFrame(() => focusCalendarRecord(key));
+      return;
+    }
+    const views = { training: "training", committee: "committee", action: "actions", inspection: "inspections" };
+    if (event.companyWide) state.locationId = "all";
+    state.inspectionCategory = "all";
+    navigate(views[event.kind]);
+    requestAnimationFrame(() => focusCalendarRecord(key));
+  }
+
   function renderInspections() {
     const inspections = filterLocation(data.inspections);
     const categories = [...new Set(data.inspectionTemplates.map((template) => template.category).filter(Boolean))]
@@ -3658,7 +4027,7 @@
               ${inspections.map((inspection) => {
                 const template = data.inspectionTemplates.find((item) => item.name === inspection.template);
                 return `
-                  <tr>
+                  <tr data-calendar-record="inspection:${escapeHtml(inspection.id)}" tabindex="-1">
                     <td class="primary-cell">
                       ${escapeHtml(inspection.template)}
                       <span class="secondary-line">${inspection.id} · ${inspection.findings} finding${inspection.findings === 1 ? "" : "s"}</span>
@@ -3703,7 +4072,7 @@
             action.committeeMeetingId === meeting.id
           );
           return `
-            <article class="meeting-card">
+            <article class="meeting-card" data-calendar-record="committee:${escapeHtml(meeting.id)}" tabindex="-1">
               <header>
                 <div>
                   <p class="section-kicker">${escapeHtml(meeting.date)} · ${escapeHtml(locationName(meeting.locationId))}</p>
@@ -3826,7 +4195,7 @@
             <thead><tr><th>Employee</th><th>Requirement</th><th>Due / completed</th><th>Valid through</th><th>Retain through</th><th>Status</th><th></th></tr></thead>
             <tbody>
               ${assignments.map((assignment) => `
-                <tr>
+                <tr data-calendar-record="training:${escapeHtml(assignment.id)}" tabindex="-1">
                   <td class="primary-cell">${escapeHtml(assignment.employee)}<span class="secondary-line">${escapeHtml(locationName(assignment.locationId))}</span></td>
                   <td class="primary-cell">${escapeHtml(assignment.course)}<span class="secondary-line">${escapeHtml(assignment.reason)}</span></td>
                   <td>${assignment.completedAt ? escapeHtml(formatShortDate(assignment.completedAt)) : escapeHtml(assignment.due)}</td>
@@ -3924,7 +4293,7 @@
             <thead><tr><th>Action</th><th>Source</th><th>Location</th><th>Owner</th><th>Due</th><th>Priority</th><th>Status</th></tr></thead>
             <tbody>
               ${sortedActions.map((action) => `
-                <tr>
+                <tr data-calendar-record="action:${escapeHtml(action.id)}" tabindex="-1">
                   <td class="primary-cell">${escapeHtml(action.title)}${renderCitationChips("corrective_action", action.id)}</td>
                   <td>${escapeHtml(action.source)}</td>
                   <td>${escapeHtml(locationName(action.locationId))}</td>
@@ -5477,7 +5846,7 @@
             <h3>Employee forms</h3>
             <div class="employee-document-list">
               ${employeeForms.map((assignment) => `
-                <div class="employee-document-row">
+                <div class="employee-document-row" data-calendar-record="form:${escapeHtml(assignment.id)}" tabindex="-1">
                   <div>
                     <strong>${escapeHtml(assignment.title)}</strong>
                     <span>${escapeHtml(assignment.formTitle)} · due ${escapeHtml(assignment.due)}</span>
@@ -5495,7 +5864,7 @@
             <h3>PDFs &amp; signatures</h3>
             <div class="employee-document-list">
               ${employeeDocuments.map((documentRecord) => `
-                <div class="employee-document-row">
+                <div class="employee-document-row" data-calendar-record="document:${escapeHtml(documentRecord.id)}" tabindex="-1">
                   <div>
                     <strong>${escapeHtml(documentRecord.title)}</strong>
                     <span>${escapeHtml(documentRecord.filename)} · ${escapeHtml(documentRecord.retainThrough)}</span>
@@ -6141,6 +6510,7 @@
     const views = {
       dashboard: renderDashboard,
       "my-work": renderMyWork,
+      calendar: renderCalendar,
       inspections: renderInspections,
       committee: renderCommittee,
       training: renderTraining,
@@ -6388,7 +6758,7 @@
                 </div>
                 <div class="field">
                   <label for="training-due">Due date</label>
-                  <input id="training-due" type="date" name="due_date" value="${isoDateOffset(16)}" required>
+                  <input id="training-due" type="date" name="due_date" value="${escapeHtml(state.modalContext.calendarDate || isoDateOffset(16))}" required>
                 </div>
                 <div class="field">
                   <label for="training-cadence">Renewal cadence (months)</label>
@@ -6453,7 +6823,7 @@
                 <div class="field"><label for="action-location">Location</label><select id="action-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId, true)}</select></div>
                 <div class="field"><label for="action-owner">Owner</label><select id="action-owner" name="owner_id" ${eligibleOwners.length ? "" : "disabled"} required>${eligibleOwners.map((person) => `<option value="${escapeHtml(person.id)}">${escapeHtml(person.name)}</option>`).join("")}</select></div>
                 <div class="field"><label for="action-priority">Priority</label><select id="action-priority" name="priority"><option>Low</option><option selected>Medium</option><option>High</option><option>Critical</option></select></div>
-                <div class="field"><label for="action-due">Due date</label><input id="action-due" type="date" name="due_date" value="${isoDateOffset(7)}" required></div>
+                <div class="field"><label for="action-due">Due date</label><input id="action-due" type="date" name="due_date" value="${escapeHtml(state.modalContext.calendarDate || isoDateOffset(7))}" required></div>
                 <div class="field full"><label for="action-evidence">Closeout evidence</label><select id="action-evidence" name="evidence"><option>Photo and note</option><option>Manager verification</option><option>Document upload</option><option>No evidence required</option></select></div>
               </div>
             </div>
@@ -6487,7 +6857,7 @@
             <div class="modal-body">
               <div class="form-grid">
                 <div class="field full"><label for="committee-title">Meeting title</label><input id="committee-title" name="title" minlength="3" maxlength="220" required placeholder="Monthly safety committee meeting"></div>
-                <div class="field"><label for="committee-date">Meeting date</label><input id="committee-date" type="date" name="meeting_date" value="${isoDateOffset()}" required></div>
+                <div class="field"><label for="committee-date">Meeting date</label><input id="committee-date" type="date" name="meeting_date" value="${escapeHtml(state.modalContext.calendarDate || isoDateOffset())}" required></div>
                 <div class="field"><label for="committee-location">Location</label><select id="committee-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId, true)}</select></div>
                 <div class="field"><label for="committee-chair">Chair</label><select id="committee-chair" name="chair_employee_id" required>${eligiblePeople.map((person) => `<option value="${person.id}">${escapeHtml(person.name)}</option>`).join("")}</select></div>
                 <div class="field"><label for="committee-attendees">Attendees</label><select id="committee-attendees" name="attendee_ids" multiple size="5" required>${eligiblePeople.map((person) => `<option value="${person.id}">${escapeHtml(person.name)}</option>`).join("")}</select><span class="field-hint">Select only employees who attended; no one is preselected.</span></div>
@@ -6584,7 +6954,7 @@
                 <div class="field"><label for="employee-form-location">Location</label><select id="employee-form-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId, true)}</select></div>
                 <div class="field"><label for="employee-form-employee">Employee</label><select id="employee-form-employee" name="employee_id" required>${eligiblePeople.map((person) => `<option value="${person.id}" ${person.id === selectedPerson?.id ? "selected" : ""}>${escapeHtml(person.name)}</option>`).join("")}</select></div>
                 <div class="field full"><label for="employee-form-template">Form template</label><select id="employee-form-template" name="form_template_version_id" required>${eligibleForms.map((template) => `<option value="${template.formTemplateVersionId}">${escapeHtml(template.title)} · ${escapeHtml(template.version)}</option>`).join("") || `<option value="">No eligible published forms at this location</option>`}</select></div>
-                <div class="field"><label for="employee-form-due">Due date</label><input id="employee-form-due" name="due_date" type="date" value="${isoDateOffset(7)}"></div>
+                <div class="field"><label for="employee-form-due">Due date</label><input id="employee-form-due" name="due_date" type="date" value="${escapeHtml(state.modalContext.calendarDate || isoDateOffset(7))}" ${state.modalContext.calendarDate ? "required" : ""}></div>
                 <div class="field"><label for="employee-form-title-input">Assignment title</label><input id="employee-form-title-input" name="title" maxlength="220" placeholder="Defaults to the form title"></div>
                 <div class="field full"><label for="employee-form-instructions">Instructions</label><textarea id="employee-form-instructions" name="instructions" maxlength="2000" placeholder="Optional employee instructions"></textarea></div>
               </div>
@@ -6613,11 +6983,11 @@
             <div class="modal-body"><div class="form-grid">
               <div class="field"><label for="employee-document-location">Location</label><select id="employee-document-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId, true)}</select></div>
               <div class="field"><label for="employee-document-employee">Employee</label><select id="employee-document-employee" name="employee_id" required>${eligiblePeople.map((person) => `<option value="${person.id}" ${person.id === selectedPerson?.id ? "selected" : ""}>${escapeHtml(person.name)}</option>`).join("")}</select></div>
-              <div class="field"><label for="employee-document-workflow">Workflow</label><select id="employee-document-workflow" name="document_kind" required><option value="signature_request" ${selectedKind === "signature_request" ? "selected" : ""}>Request e-signature</option><option value="signed_upload" ${selectedKind === "signed_upload" ? "selected" : ""}>Upload signed PDF</option></select></div>
+              <div class="field"><label for="employee-document-workflow">Workflow</label><select id="employee-document-workflow" name="document_kind" required><option value="signature_request" ${selectedKind === "signature_request" ? "selected" : ""}>Request e-signature</option>${state.modalContext.calendarDate ? "" : `<option value="signed_upload" ${selectedKind === "signed_upload" ? "selected" : ""}>Upload signed PDF</option>`}</select></div>
               <div class="field"><label for="employee-document-date">Document date</label><input id="employee-document-date" type="date" name="document_date" value="${isoDateOffset()}" required></div>
               <div class="field full"><label for="employee-document-file">PDF</label><input id="employee-document-file" name="file" type="file" accept=".pdf,application/pdf" required><span class="field-hint">PDF only · maximum 10 MB</span></div>
               <div class="field full"><label for="employee-document-name">Document title</label><input id="employee-document-name" name="title" minlength="3" maxlength="220" required></div>
-              <div class="field"><label for="employee-document-due">Signature due date</label><input id="employee-document-due" type="date" name="signature_due_date" value="${isoDateOffset(7)}"></div>
+              <div class="field"><label for="employee-document-due">Signature due date</label><input id="employee-document-due" type="date" name="signature_due_date" value="${escapeHtml(state.modalContext.calendarDate || isoDateOffset(7))}" ${state.modalContext.calendarDate ? "required" : ""}></div>
               <div class="field"><label for="employee-document-retention">Retention (months)</label><input id="employee-document-retention" type="number" min="1" max="1200" name="retention_months" placeholder="Leave blank for policy review"></div>
               <div class="field full"><label for="employee-document-intent">Signature intent</label><textarea id="employee-document-intent" name="signature_intent">I acknowledge that I reviewed this document and understand the requirements that apply to my work.</textarea></div>
             </div>
@@ -6798,6 +7168,8 @@
 
   function renderModal() {
     if (!state.modal) return "";
+    if (state.modal === "calendar-event") return renderCalendarRecordModal();
+    if (state.modal === "calendar-create") return renderCalendarCreateModal();
     if (state.modal === "inspection") return renderInspectionModal();
     if (state.modal === "incident") return renderIncidentModal();
     if (state.modal === "committee") return renderCommitteeModal();
@@ -6974,7 +7346,7 @@
       return;
     }
     app.innerHTML = `
-      <div class="app-shell">
+      <div class="app-shell" ${state.modal && state.view === "calendar" ? "inert" : ""}>
         ${renderSidebar()}
         <main class="main">
           ${renderTopbar()}
@@ -7073,10 +7445,16 @@
   }
 
   function closeModal() {
+    const returnKey = state.view === "calendar" && !state.employeeDrawerId ? calendarReturnKey : null;
     state.modal = null;
     state.selectedTemplateId = null;
     state.modalContext = {};
     render();
+    if (returnKey) requestAnimationFrame(() => {
+      const scope = calendarReturnInDayPanel ? document.querySelector(".calendar-day-panel") : document;
+      if (returnKey === "create") scope?.querySelector('[data-action="calendar-create"]')?.focus();
+      else [...(scope?.querySelectorAll("[data-calendar-event]") || [])].find((item) => item.dataset.calendarEvent === returnKey)?.focus();
+    });
   }
 
   function showToast(title, message) {
@@ -7227,7 +7605,7 @@
       target_employee_ids: people.map((person) => person.id),
       target_course_id: course.id,
       target_location_id: requestedLocationId,
-      target_due_at: new Date(`${formData.get("due_date")}T23:59:59`).toISOString(),
+      target_due_at: endOfLocationDay(String(formData.get("due_date") || ""), requestedLocationId),
       target_reason: String(formData.get("reason") || "Company safety requirement").trim(),
       target_cadence_months: Number(formData.get("cadence_months") || 0) || null,
       target_retention_months: retentionMonths,
@@ -7240,8 +7618,7 @@
       showToast("Training not assigned", result.error.message || "Supabase rejected the assignments.");
       return;
     }
-    state.modal = null;
-    state.view = "training";
+    finishDatedWorkflow("training", String(formData.get("due_date") || ""), requestedLocationId, "training");
     await loadAuthenticatedWorkspace(state.authUser);
     showToast("Training assigned", `${course.name} was assigned to ${people.length} worker${people.length === 1 ? "" : "s"}.`);
   }
@@ -7267,7 +7644,7 @@
       target_title: String(formData.get("title") || "").trim(),
       target_description: String(formData.get("description") || "").trim() || null,
       target_priority: String(formData.get("priority") || "medium").toLowerCase(),
-      target_due_at: new Date(`${formData.get("due_date")}T23:59:59`).toISOString(),
+      target_due_at: endOfLocationDay(String(formData.get("due_date") || ""), locationId),
       target_required_evidence: String(formData.get("evidence") || "").trim() || null,
       target_committee_meeting_id: String(formData.get("committee_meeting_id") || "") || null
     });
@@ -7275,8 +7652,7 @@
       showToast("Action not created", result.error.message || "Supabase rejected the corrective action.");
       return;
     }
-    state.modal = null;
-    state.view = "actions";
+    finishDatedWorkflow("action", String(formData.get("due_date") || ""), locationId, "actions");
     await loadAuthenticatedWorkspace(state.authUser);
     showToast("Corrective action created", "The owner will see the private Supabase record in their work queue.");
   }
@@ -7308,7 +7684,7 @@
       target_employee_id: employeeId,
       target_location_id: locationId,
       target_form_template_version_id: formTemplateVersionId,
-      target_due_at: dueDate ? new Date(`${dueDate}T23:59:59`).toISOString() : null,
+      target_due_at: dueDate ? endOfLocationDay(dueDate, locationId) : null,
       target_title: String(formData.get("title") || "").trim() || null,
       target_instructions: String(formData.get("instructions") || "").trim() || null
     });
@@ -7320,9 +7696,8 @@
       showToast("Employee form not assigned", result.error.message || "Supabase rejected the assignment.");
       return;
     }
-    state.modal = null;
-    state.modalContext = {};
-    state.employeeDrawerId = employeeId;
+    const fromCalendar = finishDatedWorkflow("form", dueDate, locationId);
+    state.employeeDrawerId = fromCalendar ? null : employeeId;
     await loadAuthenticatedWorkspace(state.authUser);
     showToast("Employee form assigned", `${template.title} now appears as not done for ${person.name}.`);
   }
@@ -7387,9 +7762,7 @@
       showToast("Meeting notes not saved", result.error.message || "Supabase rejected the meeting record.");
       return;
     }
-    state.modal = null;
-    state.modalContext = {};
-    state.view = "committee";
+    finishDatedWorkflow("committee", String(formData.get("meeting_date") || ""), locationId, "committee");
     await loadAuthenticatedWorkspace(state.authUser);
     showToast("Committee notes saved", "Attendance, notes, and decisions are now in the draft meeting record.");
   }
@@ -7486,7 +7859,8 @@
           filename: file.name,
           size_bytes: file.size,
           document_date: String(formData.get("document_date") || ""),
-          signature_due_at: dueDate ? new Date(`${dueDate}T23:59:59`).toISOString() : null,
+          signature_due_at: dueDate && formData.get("document_kind") === "signature_request"
+            ? endOfLocationDay(dueDate, String(formData.get("location_id") || "")) : null,
           signature_intent: String(formData.get("signature_intent") || "").trim() || null,
           retention_months: retentionMonths,
           retention_basis: retentionMonths
@@ -7515,9 +7889,8 @@
       if (completeResult.error || !completeResult.data?.employee_document_id) {
         throw completeResult.error || new Error("The uploaded PDF could not be verified.");
       }
-      state.modal = null;
-      state.modalContext = {};
-      state.employeeDrawerId = String(formData.get("employee_id") || "");
+      const fromCalendar = finishDatedWorkflow("document", dueDate, String(formData.get("location_id") || ""));
+      state.employeeDrawerId = fromCalendar ? null : String(formData.get("employee_id") || "");
       await loadAuthenticatedWorkspace(state.authUser);
       if (completeResult.data.malware_scan_status === "clean") {
         showToast(
@@ -8073,6 +8446,69 @@
       return;
     }
 
+    if (action === "calendar-view") {
+      const view = target.dataset.calendarView;
+      if (!["month", "week", "agenda"].includes(view)) return;
+      state.calendarView = view;
+      state.calendarSelectedDate = "";
+      render();
+      requestAnimationFrame(() => document.querySelector(`[data-calendar-view="${view}"]`)?.focus());
+      return;
+    }
+    if (action === "calendar-period" || action === "calendar-today") {
+      const direction = target.dataset.direction === "-1" ? -1 : 1;
+      state.calendarDate = action === "calendar-today" ? calendarToday()
+        : calendarShift(state.calendarDate, state.calendarView === "week" ? direction * 7 : 0, state.calendarView === "week" ? 0 : direction);
+      state.calendarSelectedDate = "";
+      render();
+      requestAnimationFrame(() => document.querySelector(action === "calendar-today" ? '[data-action="calendar-today"]' : `[data-action="calendar-period"][data-direction="${direction}"]`)?.focus());
+      return;
+    }
+    if (action === "calendar-day") {
+      const date = calendarDateKey(target.dataset.calendarDate);
+      if (!date) return;
+      state.calendarDate = date;
+      state.calendarSelectedDate = date;
+      render();
+      requestAnimationFrame(() => {
+        document.querySelector(".calendar-day-panel")?.scrollIntoView({ block: "nearest" });
+        document.querySelector('[data-action="calendar-close-day"]')?.focus({ preventScroll: true });
+      });
+      return;
+    }
+    if (action === "calendar-close-day") {
+      const date = state.calendarSelectedDate;
+      state.calendarSelectedDate = "";
+      render();
+      requestAnimationFrame(() => document.querySelector(`.calendar-main [data-calendar-date="${date}"]`)?.focus());
+      return;
+    }
+    if (action === "calendar-event") {
+      const key = target.dataset.calendarEvent;
+      if (!filteredCalendarEvents().some((item) => item.key === key)) return;
+      calendarReturnKey = key;
+      calendarReturnInDayPanel = Boolean(target.closest(".calendar-day-panel"));
+      openModal("calendar-event", null, { eventKey: key });
+      return;
+    }
+    if (action === "calendar-source") {
+      openCalendarSource(target.dataset.calendarEvent);
+      return;
+    }
+    if (action === "calendar-create") {
+      if (!canWriteLocation()) return;
+      calendarReturnKey = "create";
+      calendarReturnInDayPanel = Boolean(target.closest(".calendar-day-panel"));
+      openModal("calendar-create");
+      return;
+    }
+    if (action === "calendar-create-type") {
+      const type = target.dataset.modal;
+      if (!["committee", "action", "training", "employee-form-assignment", "employee-document"].includes(type)) return;
+      openModal(type, null, { calendarDate: state.calendarSelectedDate || state.calendarDate || calendarToday() });
+      return;
+    }
+
     if (action === "open-library") {
       openLibrary(target.dataset.category, {
         mode: target.dataset.mode,
@@ -8369,6 +8805,26 @@
   });
 
   document.addEventListener("change", (event) => {
+    if (event.target.dataset.calendarKind) {
+      const kind = event.target.dataset.calendarKind;
+      if (!calendarKinds.some((item) => item.id === kind)) return;
+      state.calendarTypes = event.target.checked ? [...new Set([...state.calendarTypes, kind])] : state.calendarTypes.filter((value) => value !== kind);
+      render();
+      requestAnimationFrame(() => document.querySelector(`[data-calendar-kind="${kind}"]`)?.focus());
+      return;
+    }
+    if (["calendar-employee", "calendar-status", "calendar-jump"].includes(event.target.id)) {
+      const id = event.target.id;
+      if (id === "calendar-employee") state.calendarEmployee = event.target.value;
+      if (id === "calendar-status") state.calendarStatus = event.target.value;
+      if (id === "calendar-jump" && calendarDateKey(event.target.value)) {
+        state.calendarDate = event.target.value;
+        state.calendarSelectedDate = "";
+      }
+      render();
+      requestAnimationFrame(() => document.getElementById(id)?.focus());
+      return;
+    }
     if (event.target.id === "inspection-location") {
       const templateId = document.querySelector('#inspection-form input[name="template_id"]')?.value;
       const template = data.inspectionTemplates.find((item) => item.id === templateId);
@@ -8465,6 +8921,7 @@
     }
     if (event.target.id === "location-select") {
       state.locationId = event.target.value;
+      if (!filterLocation(data.people).some((person) => person.id === state.calendarEmployee)) state.calendarEmployee = "all";
       if (state.view === "standards") {
         state.standardAuthority = "location";
         state.standardMode = "manufacturing";
@@ -8655,6 +9112,18 @@
   });
 
   document.addEventListener("keydown", (event) => {
+    if (event.key === "Tab" && state.modal && state.view === "calendar") {
+      const controls = [...document.querySelectorAll('.modal button:not([disabled]), .modal input:not([disabled]), .modal select:not([disabled]), .modal a[href]')];
+      const first = controls[0];
+      const last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    }
     if (event.key === "Escape" && state.referenceId) {
       closeReference();
       return;
