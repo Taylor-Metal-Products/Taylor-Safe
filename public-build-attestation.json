@@ -4,8 +4,8 @@
   "files": [
     {
       "path": "app.js",
-      "bytes": 438450,
-      "sha256": "2cdb179c401392c2c6bc82985e43243cb420dc968e6a5fb7f45cfcf4863cf72e"
+      "bytes": 472054,
+      "sha256": "570558019e41734e59c9f54315a280c2b2826b8c7a23380e3da0a5d52e599d9e"
     },
     {
       "path": "data.js",
@@ -44,8 +44,8 @@
     },
     {
       "path": "styles.css",
-      "bytes": 148555,
-      "sha256": "d93d4d008d019817da176d5e1675cfa269bf0d20072841b048ad58c74463b8a2"
+      "bytes": 166181,
+      "sha256": "fbaeaed7d05479586add987707e67d99b2a8da7bf22df445b76124e33f33d77b"
     },
     {
       "path": "supabase-config.js",
@@ -63,7 +63,7 @@
       "sha256": "7e94b62086deecef8c0ba3b38f514e2a1944ff6c81d92fb3ff967828c406c38f"
     }
   ],
-  "aggregateSha256": "8fbcda68df201f6a44ad25be80ef7ed893aa730e08c831431160f4bc182340b4",
+  "aggregateSha256": "5ce500b9fa573f81816e83031e9e9bb8c5230988dc815810ddda7eb4ae941d1a",
   "releaseFiles": [
     {
       "path": ".github/workflows/deploy-pages.yml",
@@ -77,8 +77,8 @@
     },
     {
       "path": "app.js",
-      "bytes": 438450,
-      "sha256": "2cdb179c401392c2c6bc82985e43243cb420dc968e6a5fb7f45cfcf4863cf72e"
+      "bytes": 472054,
+      "sha256": "570558019e41734e59c9f54315a280c2b2826b8c7a23380e3da0a5d52e599d9e"
     },
     {
       "path": "data.js",
@@ -94,6 +94,11 @@
       "path": "docs/ARCHITECTURE.md",
       "bytes": 14124,
       "sha256": "9dd739d0cdbbc915cc9c3ae5ba008780b146598e49459fd52f270cdc650ed87f"
+    },
+    {
+      "path": "docs/calendar-workflow.md",
+      "bytes": 4345,
+      "sha256": "73081aae8c4de2c7efbb831e4f7ba86455df361f0c39769917509f6c44828abd"
     },
     {
       "path": "docs/competitive-research.md",
@@ -297,8 +302,8 @@
     },
     {
       "path": "styles.css",
-      "bytes": 148555,
-      "sha256": "d93d4d008d019817da176d5e1675cfa269bf0d20072841b048ad58c74463b8a2"
+      "bytes": 166181,
+      "sha256": "fbaeaed7d05479586add987707e67d99b2a8da7bf22df445b76124e33f33d77b"
     },
     {
       "path": "supabase-config.example.js",
@@ -446,9 +451,14 @@
       "sha256": "9772b174013f3fbd12dd4b476c9690a5c0b0106a33b4c9ab4afbd88281238b7f"
     },
     {
+      "path": "tests/calendar.spec.js",
+      "bytes": 21525,
+      "sha256": "cdf77977a49f03550db83a912a1ff856a55138ec1af80af2048bcaef6b814439"
+    },
+    {
       "path": "tests/helpers/authenticated-workspace.js",
-      "bytes": 94655,
-      "sha256": "d5914524e5446424ed29057d4cd7e9e7fe98872ee2f5c6cd460cf553b205241d"
+      "bytes": 94742,
+      "sha256": "05723e51683986dda09ee0a9e68f851ed436caca377d752acf795d3d93501d1d"
     },
     {
       "path": "tests/osha-reference.spec.js",
@@ -481,5 +491,5 @@
       "sha256": "7e94b62086deecef8c0ba3b38f514e2a1944ff6c81d92fb3ff967828c406c38f"
     }
   ],
-  "releaseAggregateSha256": "b38ded5a993f0af89ab5a44aaa65c78c6999ff7a2b7ef28ca44671bc725365a7"
+  "releaseAggregateSha256": "d7eac8bd81192545c5d604416e10c89c3b3685984c02c023d2c59040c8f68213"
 }

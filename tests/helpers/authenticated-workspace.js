@@ -880,6 +880,9 @@ function fakeSupabaseScript(options = {}) {
       updated_at: createdAt
     }];
   }
+  if (options.tableOverrides) {
+    Object.assign(tables, options.tableOverrides);
+  }
   const seed = {
     session: { user: AUTH_USER },
     companyId: WORKSPACE_FIXTURE.company.id,
