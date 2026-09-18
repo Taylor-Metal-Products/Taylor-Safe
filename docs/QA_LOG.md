@@ -3,6 +3,19 @@
 LFES rule: record what ran, what it proved, and what remains outside the proof
 boundary.
 
+## 2026-09-18 committee template candidate — not deployed
+
+| Check | Result | Proof boundary |
+|---|---:|---|
+| Full `npm test`, desktop and Pixel 7 | PASS: 159 passed, 9 skipped, 0 failed (40.9s) | Local browser and mocked API behavior only; no hosted company records were created. The skips remain four private-fixture/original-file instances, three desktop skips of mobile-only layout tests, and two mobile skips of desktop-only global search. |
+| Focused committee suite | PASS: 14/14 | Familiar fields round-trip through the existing RPC shape; legacy free text remains intact; HTML is escaped and newlines survive reload; optional omissions are not asserted as no incidents; no extra meeting is scheduled; chair and attendance are explicit; location changes clear people without discarding notes; action linkage/finalization and collapsed verification details work against synthetic responses. |
+| Actual-app visual checks, desktop 1440px and Pixel 7 | PASS | The four template sections, metadata fields, saved notes, and linked task-list rows were visually inspected. No horizontal page/modal overflow or capture-flow JavaScript errors were observed. Not an actual iPad or comprehensive accessibility/weak-network test. |
+| `node --check app.js`, test syntax, `git diff --check`, `npm run build` | PASS | Syntax, whitespace, and 12-file static build; not release approval. |
+| Backend and release | NO HOSTED CHANGES; RELEASE PENDING | No migrations, Auth/Storage/settings changes, source-document edits, or live deployment were performed. The prior signature does not approve this changed tree; Louie must approve and attest the exact release before deployment. |
+
+See `committee-meeting-template.md` for field mapping, retained limitations, and
+frontend-only rollback compatibility.
+
 ## Current 2026-08-06 evidence
 
 | Check | Result | What it proves | What it does not prove |

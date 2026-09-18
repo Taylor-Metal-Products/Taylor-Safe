@@ -4085,27 +4085,33 @@
                 <span><strong>${meetingActions.length}</strong> action item${meetingActions.length === 1 ? "" : "s"}</span>
                 <span>Chair: <strong>${escapeHtml(meeting.chair)}</strong></span>
               </div>
+              <p class="secondary-line"><strong>Employees in attendance:</strong> ${escapeHtml(meeting.attendees.filter((person) => person.status === "Attended").map((person) => person.employee).join(", ") || "No attendance recorded")}</p>
               <div class="employee-record-grid">
-                <section class="employee-record-section">
-                  <span>Notes</span>
+                <section class="employee-record-section meeting-notes">
+                  <span>Meeting notes</span>
                   <p>${escapeHtml(meeting.notes || "No notes recorded yet.")}</p>
                 </section>
-                <section class="employee-record-section">
-                  <span>Decisions</span>
+                <section class="employee-record-section meeting-notes">
+                  <span>Decisions / recommendations</span>
                   <p>${escapeHtml(meeting.decisions || "No decisions recorded yet.")}</p>
+                  ${meeting.agenda ? `<span>Original agenda</span><p>${escapeHtml(meeting.agenda)}</p>` : ""}
                 </section>
               </div>
-              ${meetingActions.length ? `
-                <div class="employee-document-list">
+              <section class="committee-task-list" aria-label="Safety task list">
+                <h3>Safety task list</h3>
+                <p class="secondary-line">Ongoing follow-up stays separate from the meeting notes.</p>
+                ${meetingActions.length ? `
                   ${meetingActions.map((action) => `
-                    <div class="employee-document-row">
-                      <div><strong>${escapeHtml(action.title)}</strong><span>${escapeHtml(action.owner)} · due ${escapeHtml(action.due)}</span></div>
-                      ${statusPill(action.status)}
+                    <div class="committee-task-row">
+                      <div><small>Possible actions</small><strong>${escapeHtml(action.title)}</strong>${action.description ? `<p>${escapeHtml(action.description)}</p>` : ""}</div>
+                      <div><small>Person taking care of this</small><strong>${escapeHtml(action.owner)}</strong></div>
+                      <div><small>Due date</small><strong>${escapeHtml(action.due)}</strong></div>
+                      <div><small>Done / status</small>${statusPill(action.status)}</div>
                     </div>
                   `).join("")}
-                </div>
-              ` : ""}
-              ${meeting.minutesSha256 ? `<p class="secondary-line">Final minutes SHA-256 · <code>${escapeHtml(meeting.minutesSha256.slice(0, 16))}…</code></p>` : ""}
+                ` : `<p class="secondary-line">No safety tasks linked to this meeting.</p>`}
+              </section>
+              ${meeting.minutesSha256 ? `<details class="committee-audit-details"><summary>Record verification</summary><p>Final minutes SHA-256</p><code>${escapeHtml(meeting.minutesSha256)}</code></details>` : ""}
               <footer class="card-footer row-actions">
                 <button class="button small" type="button" ${meeting.rawStatus === "draft" && canWriteLocation(meeting.locationId) ? "" : "disabled"} data-action="open-modal" data-modal="action" data-meeting-id="${meeting.id}">Add action</button>
                 <button class="button small primary" type="button" ${meeting.rawStatus === "draft" && canWriteLocation(meeting.locationId) && meeting.notes.trim() ? "" : "disabled"} data-action="finalize-committee" data-meeting-id="${meeting.id}">Finalize minutes</button>
@@ -6844,28 +6850,45 @@
     );
     return `
       <div class="modal-backdrop" data-action="backdrop-close">
-        <section class="modal wide" role="dialog" aria-modal="true" aria-labelledby="committee-modal-title">
+        <section class="modal wide committee-template-modal" role="dialog" aria-modal="true" aria-labelledby="committee-modal-title">
           <header class="modal-header">
-            <div>
-              <p class="section-kicker">Safety committee record</p>
+            <div class="committee-template-heading">
+              <p class="section-kicker">Safety committee meeting notes</p>
               <h2 id="committee-modal-title">Record committee meeting</h2>
-              <p>Capture attendance, notes, decisions, and then assign accountable follow-up work.</p>
+              <p class="committee-template-intro">Follow the familiar meeting-notes sheet, then keep ongoing items in the safety task list.</p>
             </div>
             <button class="icon-button" type="button" data-action="close-modal" aria-label="Close dialog">×</button>
           </header>
           <form id="committee-form">
             <div class="modal-body">
               <div class="form-grid">
-                <div class="field full"><label for="committee-title">Meeting title</label><input id="committee-title" name="title" minlength="3" maxlength="220" required placeholder="Monthly safety committee meeting"></div>
-                <div class="field"><label for="committee-date">Meeting date</label><input id="committee-date" type="date" name="meeting_date" value="${escapeHtml(state.modalContext.calendarDate || isoDateOffset())}" required></div>
+                <div class="field full"><label for="committee-title">Meeting title</label><input id="committee-title" name="title" minlength="3" maxlength="220" required value="Safety committee meeting"></div>
                 <div class="field"><label for="committee-location">Location</label><select id="committee-location" name="location_id" required>${renderLocationOptions(false, selectedLocationId, true)}</select></div>
-                <div class="field"><label for="committee-chair">Chair</label><select id="committee-chair" name="chair_employee_id" required>${eligiblePeople.map((person) => `<option value="${person.id}">${escapeHtml(person.name)}</option>`).join("")}</select></div>
-                <div class="field"><label for="committee-attendees">Attendees</label><select id="committee-attendees" name="attendee_ids" multiple size="5" required>${eligiblePeople.map((person) => `<option value="${person.id}">${escapeHtml(person.name)}</option>`).join("")}</select><span class="field-hint">Select only employees who attended; no one is preselected.</span></div>
-                <div class="field full"><label for="committee-agenda">Agenda</label><textarea id="committee-agenda" name="agenda" placeholder="Topics reviewed"></textarea></div>
-                <div class="field full"><label for="committee-notes">Meeting notes</label><textarea id="committee-notes" name="notes" minlength="3" required placeholder="Discussion, observations, and employee input"></textarea></div>
-                <div class="field full"><label for="committee-decisions">Decisions</label><textarea id="committee-decisions" name="decisions" placeholder="Decisions made and controls approved"></textarea></div>
+                <div class="field"><label for="committee-department">Department</label><input id="committee-department" name="department" maxlength="120" value="Safety Committee" required></div>
+                <div class="field"><label for="committee-date">Meeting date</label><input id="committee-date" type="date" name="meeting_date" value="${escapeHtml(state.modalContext.calendarDate || isoDateOffset())}" required></div>
+                <div class="field"><label for="committee-time">Time</label><input id="committee-time" type="time" name="meeting_time" aria-describedby="committee-time-hint"><span id="committee-time-hint" class="field-hint">Local time at the selected location. Optional.</span></div>
+                <div class="field"><label for="committee-next-meeting">Next meeting</label><input id="committee-next-meeting" type="date" name="next_meeting_date" aria-describedby="committee-next-meeting-hint"><span id="committee-next-meeting-hint" class="field-hint">Planning reference only; this does not create a calendar event.</span></div>
+                <div class="field"><label for="committee-chair">Chair</label><select id="committee-chair" name="chair_employee_id" required><option value="" selected disabled>Select the meeting chair</option>${eligiblePeople.map((person) => `<option value="${person.id}">${escapeHtml(person.name)}</option>`).join("")}</select></div>
+                <div class="field full"><label for="committee-attendees">Employees in attendance</label><select id="committee-attendees" name="attendee_ids" multiple size="5" required aria-describedby="committee-attendees-hint">${eligiblePeople.map((person) => `<option value="${person.id}">${escapeHtml(person.name)}</option>`).join("")}</select><span id="committee-attendees-hint" class="field-hint">Select only employees who attended, including the chair; no one is preselected.</span></div>
               </div>
-              <div class="prototype-note"><strong>Traceable follow-up</strong><span>Save the minutes first, add action items with an employee owner and due date, then finalize the meeting to freeze a SHA-256 minutes manifest.</span></div>
+              <fieldset class="committee-template-section">
+                <legend>Subjects and topics discussed</legend>
+                <div class="field full"><textarea id="committee-notes" name="notes" aria-label="Subjects and topics discussed" minlength="3" required rows="4" placeholder="Record the safety topics, hazards, and discussion from this meeting."></textarea></div>
+              </fieldset>
+              <fieldset class="committee-template-section">
+                <legend>Accidents / near misses</legend>
+                <div class="field full"><textarea id="committee-accidents" name="accidents" aria-label="Accidents / near misses" rows="3" placeholder="Record events reviewed and prevention recommendations, or explicitly enter None reported."></textarea></div>
+              </fieldset>
+              <fieldset class="committee-template-section">
+                <legend>Employee suggestions, comments, or concerns</legend>
+                <div class="field full"><textarea id="committee-concerns" name="concerns" aria-label="Employee suggestions, comments, or concerns" rows="3" placeholder="Capture employee input and concerns raised."></textarea></div>
+              </fieldset>
+              <fieldset class="committee-template-section">
+                <legend>Discussion over concerns from previous meeting</legend>
+                <div class="field full"><textarea id="committee-previous-concerns" name="previous_concerns" aria-label="Discussion over concerns from previous meeting" rows="3" placeholder="Record updates and unresolved concerns. Track accountable follow-up in the safety task list."></textarea></div>
+              </fieldset>
+              <div class="field full"><label for="committee-decisions">Decisions / recommendations</label><textarea id="committee-decisions" name="decisions" rows="3" placeholder="Record decisions, recommended corrections, and agreed management response dates."></textarea></div>
+              <div class="committee-template-followup"><strong>Safety task list</strong><p>After saving, use Add action to record possible actions, the person taking care of each item, and its due date. The task's status shows whether it is done.</p><p>Review entries before saving; saved notes cannot yet be edited. Finalize minutes only after adding the meeting's actions.</p></div>
             </div>
             <footer class="modal-footer">
               <button class="button" type="button" data-action="close-modal">Cancel</button>
@@ -7739,22 +7762,49 @@
     showToast("Tablet form opened", `${assignment.employee}'s one-time form is isolated in a new tab and expires in 15 minutes.`);
   }
 
+  // Keep the familiar sheet human-readable in the existing minutes field. No
+  // parsing of prior free-text records, schema change, or invented timestamps.
+  function formatCommitteeTemplateNotes(formData) {
+    const entry = (key) => String(formData.get(key) || "").trim();
+    const metadata = [
+      `Department: ${entry("department")}`,
+      `Time (location local): ${entry("meeting_time") || "Not recorded."}`,
+      `Next meeting (planning reference): ${entry("next_meeting_date") || "Not recorded."}`
+    ].join("\n");
+    const sections = [
+      ["Subjects and topics discussed", "notes"],
+      ["Accidents / near misses", "accidents"],
+      ["Employee suggestions, comments, or concerns", "concerns"],
+      ["Discussion over concerns from previous meeting", "previous_concerns"]
+    ].map(([label, key]) => `${label}:\n${entry(key) || "Not recorded."}`);
+    return [metadata, ...sections].join("\n\n");
+  }
+
   async function handleCommitteeSubmit(form) {
     const formData = new FormData(form);
+    if (String(formData.get("notes") || "").trim().length < 3 || !String(formData.get("department") || "").trim()) {
+      showToast("Meeting notes not saved", "Enter a department and at least three characters describing the subjects discussed.");
+      return;
+    }
     const locationId = String(formData.get("location_id") || "");
     if (!canWriteLocation(locationId)) {
       showToast("Meeting notes not saved", "Your role cannot manage this location.");
       return;
     }
     const attendeeIds = formData.getAll("attendee_ids").map(String).filter(Boolean);
+    const chairId = String(formData.get("chair_employee_id") || "");
+    if (!chairId || !attendeeIds.includes(chairId)) {
+      showToast("Meeting notes not saved", "Select the meeting chair and include them in Employees in attendance.");
+      return;
+    }
     const result = await supabaseClient.rpc("create_safety_committee_meeting", {
       target_location_id: locationId,
       target_title: String(formData.get("title") || "").trim(),
       target_meeting_date: String(formData.get("meeting_date") || ""),
-      target_chair_employee_id: String(formData.get("chair_employee_id") || ""),
+      target_chair_employee_id: chairId,
       target_attendee_ids: attendeeIds,
-      target_agenda: String(formData.get("agenda") || "").trim() || null,
-      target_notes: String(formData.get("notes") || "").trim(),
+      target_agenda: null,
+      target_notes: formatCommitteeTemplateNotes(formData),
       target_decisions: String(formData.get("decisions") || "").trim() || null,
       target_next_meeting_at: null
     });
@@ -7764,7 +7814,7 @@
     }
     finishDatedWorkflow("committee", String(formData.get("meeting_date") || ""), locationId, "committee");
     await loadAuthenticatedWorkspace(state.authUser);
-    showToast("Committee notes saved", "Attendance, notes, and decisions are now in the draft meeting record.");
+    showToast("Committee notes saved", "Your meeting sheet is saved. Add follow-up actions to the safety task list before finalizing.");
   }
 
   async function finalizeCommitteeMeeting(meetingId) {
@@ -7776,8 +7826,7 @@
       return;
     }
     await loadAuthenticatedWorkspace(state.authUser);
-    const receipt = Array.isArray(result.data) ? result.data[0] : result.data;
-    showToast("Committee minutes finalized", `Immutable minutes SHA-256: ${String(receipt?.minutes_sha256 || "").slice(0, 16)}…`);
+    showToast("Committee minutes finalized", "The minutes are locked. Record verification details are available on the meeting card.");
   }
 
   async function handleEmployeeSubmit(form) {
@@ -8866,7 +8915,7 @@
       const attendeesSelect = document.querySelector("#committee-attendees");
       const submitButton = document.querySelector('#committee-form button[type="submit"]');
       if (chairSelect) {
-        chairSelect.innerHTML = people.map((person) => `<option value="${person.id}">${escapeHtml(person.name)}</option>`).join("");
+        chairSelect.innerHTML = `<option value="" selected disabled>Select the meeting chair</option>${people.map((person) => `<option value="${person.id}">${escapeHtml(person.name)}</option>`).join("")}`;
         chairSelect.disabled = !people.length;
       }
       if (attendeesSelect) {
