@@ -1,4 +1,5 @@
 const { test, expect } = require("@playwright/test");
+const { expectPlainLanguageUi } = require("./helpers/plain-language-ui");
 
 const USER_A = {
   id: "00000000-0000-4000-8000-000000000001",
@@ -169,6 +170,7 @@ test("invite-only configuration shows sign in without public account creation", 
 
   await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
   await expect(page).toHaveTitle(/^Taylor Safe(?: ·|$)/);
+  await expectPlainLanguageUi(page);
   const productOverview = page.getByRole("region", { name: "Taylor Safe product overview" });
   await expect(productOverview.locator(".auth-brand strong")).toHaveText("Taylor Safe");
   await expect(productOverview.locator(".auth-brand strong")).toBeVisible();
@@ -187,6 +189,7 @@ test("optional public signup preserves an explicit confirmation redirect", async
   await page.goto("/");
 
   await page.getByRole("tab", { name: "Create account" }).click();
+  await expectPlainLanguageUi(page);
   await expect(page.getByLabel("Password")).toHaveAttribute("minlength", "8");
   await page.getByLabel("Full name").fill("Prototype Owner");
   await page.getByLabel("Email").fill("owner@example.test");
@@ -206,11 +209,13 @@ test("verified invite callback requires a new password before provisioning", asy
   await page.goto("/?auth=invite#access_token=invite-session&refresh_token=invite-refresh&type=invite");
 
   await expect(page.getByRole("heading", { name: "Finish your invitation" })).toBeVisible();
+  await expectPlainLanguageUi(page);
   await page.getByLabel("New password", { exact: true }).fill("Safety!!");
   await page.getByLabel("Confirm new password", { exact: true }).fill("Safety!!");
   await page.getByRole("button", { name: "Set password and continue" }).click();
 
   await expect(page.getByRole("heading", { name: "Your company access is being prepared" })).toBeVisible();
+  await expectPlainLanguageUi(page);
   const updateCall = await page.evaluate(() =>
     window.__safetyOpsAuthCalls.find((call) => call.method === "updateUser")
   );
@@ -269,6 +274,7 @@ test("PASSWORD_RECOVERY event is authoritative for password setup", async ({ pag
     window.__emitSafetyOpsAuthState("PASSWORD_RECOVERY", session), recoveredSession
   );
   await expect(page.getByRole("heading", { name: "Choose a new password" })).toBeVisible();
+  await expectPlainLanguageUi(page);
 });
 
 test("a naked recovery query cannot force an ordinary session into password setup", async ({ page }) => {
@@ -311,6 +317,7 @@ test("password recovery sends a non-enumerating reset request", async ({ page })
   await page.goto("/");
 
   await page.getByRole("button", { name: "Forgot password?" }).click();
+  await expectPlainLanguageUi(page);
   await page.getByLabel("Email").fill("owner@example.test");
   await page.getByRole("button", { name: "Send recovery link" }).click();
 
