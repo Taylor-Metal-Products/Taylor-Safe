@@ -168,6 +168,12 @@ test("invite-only configuration shows sign in without public account creation", 
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+  await expect(page).toHaveTitle(/^Taylor Safe(?: ·|$)/);
+  const productOverview = page.getByRole("region", { name: "Taylor Safe product overview" });
+  await expect(productOverview.locator(".auth-brand strong")).toHaveText("Taylor Safe");
+  await expect(productOverview.locator(".auth-brand strong")).toBeVisible();
+  await expect(productOverview.locator(".auth-brand span")).toHaveText("TS");
+  await expect(productOverview.locator(".auth-brand span")).toBeVisible();
   await expect(page.getByRole("tab", { name: "Create account" })).toHaveCount(0);
   expect(await page.evaluate(() => window.__safetyOpsAuthLifecycle.slice(0, 3))).toEqual([
     "subscribe",
@@ -280,7 +286,7 @@ test("expired invitation callback fails closed with a generic recovery path", as
   await page.goto("/?auth=invite&code=expired-pkce-code&error=access_denied&error_code=otp_expired&error_description=internal+provider+detail&type=invite");
 
   await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
-  await expect(page.getByText("This invitation link is invalid or expired. Ask your SafetyOps administrator for a new invitation.")).toBeVisible();
+  await expect(page.getByText("This invitation link is invalid or expired. Ask your Taylor Safe administrator for a new invitation.")).toBeVisible();
   await expect(page.getByText(/internal provider detail/)).toHaveCount(0);
   const callbackUrl = new URL(page.url());
   for (const parameter of ["auth", "code", "error", "error_code", "error_description", "type"]) {

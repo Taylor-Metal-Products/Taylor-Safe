@@ -810,8 +810,8 @@
       content = `
         <div class="auth-card-heading">
           <span class="auth-step">Real workspace required</span>
-          <h2>Connect SafetyOps to Supabase</h2>
-          <p>This build contains no fictional company or employee records. Add the SafetyOps project URL and publishable key to activate secure sign-in and company setup.</p>
+          <h2>Connect Taylor Safe to Supabase</h2>
+          <p>This build contains no fictional company or employee records. Add the Taylor Safe project URL and publishable key to activate secure sign-in and company setup.</p>
         </div>
         <div class="auth-boundary-note">
           <strong>No tenant data in GitHub</strong>
@@ -819,8 +819,8 @@
         </div>
         <div class="auth-readiness-list">
           <span>${statusPill("Public shell ready", "green")} GitHub Pages assets</span>
-          <span>${statusPill("Schema ready", "blue")} Versioned SafetyOps migrations</span>
-          <span>${statusPill("Connection required", "amber")} SafetyOps Supabase URL and publishable key</span>
+          <span>${statusPill("Schema ready", "blue")} Versioned Taylor Safe migrations</span>
+          <span>${statusPill("Connection required", "amber")} Taylor Safe Supabase URL and publishable key</span>
         </div>
       `;
     } else if (state.authStatus === "loading") {
@@ -836,7 +836,7 @@
         <div class="auth-card-heading">
           <span class="auth-step">Workspace unavailable</span>
           <h2>Your session is still secure</h2>
-          <p>SafetyOps could not load the authorized company records. No cached tenant workspace is being shown.</p>
+          <p>Taylor Safe could not load the authorized company records. No cached tenant workspace is being shown.</p>
         </div>
         ${message}
         <div class="auth-boundary-note">
@@ -851,7 +851,7 @@
         <div class="auth-card-heading">
           <span class="auth-step">Provisioning pending</span>
           <h2>Your company access is being prepared</h2>
-          <p>${escapeHtml(state.authUser?.email || "This invited account")} is authenticated, but it does not yet have an active SafetyOps company membership.</p>
+          <p>${escapeHtml(state.authUser?.email || "This invited account")} is authenticated, but it does not yet have an active Taylor Safe company membership.</p>
         </div>
         ${message}
         <div class="auth-boundary-note">
@@ -866,7 +866,7 @@
         <div class="auth-card-heading">
           <span class="auth-step">Secure account activation</span>
           <h2>${state.authFlow === "recovery" ? "Choose a new password" : "Finish your invitation"}</h2>
-          <p>Set a private password for ${escapeHtml(state.authUser?.email || "this account")}. SafetyOps never sends or stores it in GitHub.</p>
+          <p>Set a private password for ${escapeHtml(state.authUser?.email || "this account")}. Taylor Safe never sends or stores it in GitHub.</p>
         </div>
         ${message}
         <form id="auth-password-setup-form" class="auth-form">
@@ -925,8 +925,8 @@
 
     return `
       <main class="auth-shell">
-        <section class="auth-story" aria-label="SafetyOps product overview">
-          <div class="auth-brand"><span>SO</span><strong>SafetyOps</strong></div>
+        <section class="auth-story" aria-label="Taylor Safe product overview">
+          <div class="auth-brand"><span>TS</span><strong>Taylor Safe</strong></div>
           <div>
             <p class="eyebrow">Paperless safety operations</p>
             <h1>One private system for training, forms, programs, and proof.</h1>
@@ -1353,13 +1353,13 @@
       const fullName = profileResult.data?.full_name?.trim()
         || user.user_metadata?.full_name
         || user.email?.split("@")[0]
-        || "SafetyOps user";
+        || "Taylor Safe user";
       const initials = fullName
         .split(/\s+/)
         .filter(Boolean)
         .slice(0, 2)
         .map((part) => part[0].toUpperCase())
-        .join("") || "SO";
+        .join("") || "TS";
 
       resetTenantOperationalData();
       const rawMembers = membersResult.data || [];
@@ -1475,7 +1475,7 @@
           userId: employee.user_id || null,
           employeeNumber: employee.employee_number || null,
           name,
-          initials: name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join("") || "SO",
+          initials: name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join("") || "TS",
           role: linkedRole ? readableRole(linkedRole) : employee.job_title || "Employee",
           jobTitle: employee.job_title || "",
           department: employee.department || "",
@@ -1971,7 +1971,7 @@
           id: program.id,
           number: program.program_code,
           title: program.title,
-          sourceName: `SafetyOps controlled program ${program.program_code}`,
+          sourceName: `Taylor Safe controlled program ${program.program_code}`,
           description: program.description || "",
           category: program.category,
           language: "English",
@@ -2569,7 +2569,7 @@
     state.authMode = flow === "recovery" ? "recovery" : "sign-in";
     state.authMessage = flow === "recovery"
       ? "This password-recovery link is invalid or expired. Request a new recovery link."
-      : "This invitation link is invalid or expired. Ask your SafetyOps administrator for a new invitation.";
+      : "This invitation link is invalid or expired. Ask your Taylor Safe administrator for a new invitation.";
     state.authBusy = false;
     clearAuthFlowUrl();
     render();
@@ -2643,7 +2643,7 @@
       }
 
       if (!publicSignupEnabled) {
-        throw new Error("Account creation is invite-only. Ask a SafetyOps administrator for access.");
+        throw new Error("Account creation is invite-only. Ask a Taylor Safe administrator for access.");
       }
 
       const signupPassword = String(formData.get("password") || "");
@@ -2846,9 +2846,9 @@
     return `
       <aside class="sidebar ${state.sidebarOpen ? "open" : ""}" aria-label="Primary navigation">
         <div class="brand">
-          <div class="brand-mark" aria-hidden="true">SO</div>
+          <div class="brand-mark" aria-hidden="true">TS</div>
           <div>
-            <p class="brand-name">SafetyOps</p>
+            <p class="brand-name">Taylor Safe</p>
             <p class="brand-subtitle">Safety work center</p>
           </div>
         </div>
@@ -3584,7 +3584,7 @@
                   <p class="activity-text">${escapeHtml(item.text)}</p>
                   <span class="activity-time">${escapeHtml(item.time)}</span>
                 </div>
-              `).join("") || renderEmptyState("•", "No activity yet", "Completed work and administrative changes will appear here as the company starts using SafetyOps.")}
+              `).join("") || renderEmptyState("•", "No activity yet", "Completed work and administrative changes will appear here as the company starts using Taylor Safe.")}
             </div>
           </article>
         </div>
@@ -5710,7 +5710,7 @@
       <div style="height:14px"></div>
       <div class="prototype-note">
         <strong>Read before acknowledgement</strong>
-        <span>Acknowledgement is intentionally unavailable until SafetyOps can open the exact controlled version and record that reading step. Location classification and document permission remain separate.</span>
+        <span>Acknowledgement is intentionally unavailable until Taylor Safe can open the exact controlled version and record that reading step. Location classification and document permission remain separate.</span>
       </div>
     `;
   }
@@ -6691,7 +6691,7 @@
                 </div>
               </div>
               <div style="height:14px"></div>
-              <div class="prototype-note"><strong>Current workflow</strong><span>The report is retained in the incident register. Assignment, investigation, evidence, and closeout controls still need to be enabled before SafetyOps can manage the full case.</span></div>
+              <div class="prototype-note"><strong>Current workflow</strong><span>The report is retained in the incident register. Assignment, investigation, evidence, and closeout controls still need to be enabled before Taylor Safe can manage the full case.</span></div>
             </div>
             <footer class="modal-footer">
               <button class="button" type="button" data-action="close-modal">Cancel</button>
@@ -6781,7 +6781,7 @@
               <div style="height:14px"></div>
               <div class="prototype-note"><strong>Confirm roster scope</strong><span>Choose “Entire authorized roster” deliberately. The assignment applies to every active employee at the selected location.</span></div>
               <div style="height:14px"></div>
-              <div class="prototype-note"><strong>Retention trace</strong><span>Leave retention blank when the governing company or regulatory policy has not been reviewed. SafetyOps will display Policy review required instead of inventing a universal OSHA period.</span></div>
+              <div class="prototype-note"><strong>Retention trace</strong><span>Leave retention blank when the governing company or regulatory policy has not been reviewed. Taylor Safe will display Policy review required instead of inventing a universal OSHA period.</span></div>
             </div>
             <footer class="modal-footer">
               <button class="button" type="button" data-action="close-modal">Cancel</button>
@@ -6921,7 +6921,7 @@
               <div class="field"><label for="training-completion-method">Completion method</label><select id="training-completion-method" name="completion_method" required><option value="instructor_led">Instructor led</option><option value="practical_evaluation">Practical evaluation</option><option value="external_record">External record</option><option value="in_app">In app</option></select></div>
               <div class="field"><label for="training-quiz-score">Quiz score</label><input id="training-quiz-score" name="quiz_score" type="number" min="0" max="100" step="0.01" placeholder="Optional"></div>
               <div class="field"><label for="training-instructor">Instructor / evaluator</label><input id="training-instructor" name="instructor_name" maxlength="160" placeholder="Optional"></div>
-            </div><div class="prototype-note"><strong>Immutable completion receipt</strong><span>SafetyOps will pin the employee, course version, verifier, completion time, renewal date, retention policy, and a server-derived SHA-256 manifest.</span></div></div>
+            </div><div class="prototype-note"><strong>Immutable completion receipt</strong><span>Taylor Safe will pin the employee, course version, verifier, completion time, renewal date, retention policy, and a server-derived SHA-256 manifest.</span></div></div>
             <footer class="modal-footer"><button class="button" type="button" data-action="close-modal">Cancel</button><button class="button primary" type="submit">Record completion</button></footer>
           </form>
         </section>
@@ -7026,7 +7026,7 @@
               <label for="employee-typed-name">Typed employee name</label>
               <input id="employee-typed-name" name="typed_name" autocomplete="off" required placeholder="${escapeHtml(person?.name || documentRecord.employee)}">
             </section>
-            <section class="signing-evidence"><strong>Evidence captured by SafetyOps</strong><span>The employee, exact PDF hash, intent, typed name, time, authenticated facilitator, and signature hash are derived and stored by PostgreSQL. This creates traceable electronic acknowledgement evidence; it does not alter the source PDF.</span></section>
+            <section class="signing-evidence"><strong>Evidence captured by Taylor Safe</strong><span>The employee, exact PDF hash, intent, typed name, time, authenticated facilitator, and signature hash are derived and stored by PostgreSQL. This creates traceable electronic acknowledgement evidence; it does not alter the source PDF.</span></section>
             <footer><button class="button" type="button" data-action="close-modal">Cancel</button><button class="button primary" type="submit">Complete acknowledgement</button></footer>
           </form>
         </section>
@@ -7043,7 +7043,7 @@
             <div>
               <p class="section-kicker">Private company library</p>
               <h2 id="form-upload-title">Upload a company form</h2>
-              <p>Add a PDF, DOCX, or XLSX source for development testing. SafetyOps fingerprints and stages it locally without putting it in GitHub.</p>
+              <p>Add a PDF, DOCX, or XLSX source for development testing. Taylor Safe fingerprints and stages it locally without putting it in GitHub.</p>
             </div>
             <button class="icon-button" type="button" data-action="close-modal" aria-label="Close upload dialog">×</button>
           </header>
@@ -7225,10 +7225,10 @@
       return `<main class="handoff-standalone"><section class="auth-card"><h1>Employee form unavailable</h1><p>The secure data service is not configured on this deployment.</p></section></main>`;
     }
     if (handoff.status === "loading") {
-      return `<main class="handoff-standalone"><section class="auth-card"><p class="section-kicker">SafetyOps secure handoff</p><h1>Loading employee form…</h1><p>Verifying this one-time session without opening the company dashboard.</p></section></main>`;
+      return `<main class="handoff-standalone"><section class="auth-card"><p class="section-kicker">Taylor Safe secure handoff</p><h1>Loading employee form…</h1><p>Verifying this one-time session without opening the company dashboard.</p></section></main>`;
     }
     if (handoff.status === "error") {
-      return `<main class="handoff-standalone"><section class="auth-card"><p class="section-kicker">SafetyOps secure handoff</p><h1>This employee form cannot be opened</h1><p>${escapeHtml(handoff.error || "The link expired, was revoked, or has already been used.")}</p><p>Ask the safety facilitator to start a new tablet session from the dashboard.</p><button class="button" type="button" data-action="close-handoff-window">Close this tab</button></section></main>`;
+      return `<main class="handoff-standalone"><section class="auth-card"><p class="section-kicker">Taylor Safe secure handoff</p><h1>This employee form cannot be opened</h1><p>${escapeHtml(handoff.error || "The link expired, was revoked, or has already been used.")}</p><p>Ask the safety facilitator to start a new tablet session from the dashboard.</p><button class="button" type="button" data-action="close-handoff-window">Close this tab</button></section></main>`;
     }
     if (handoff.status === "complete") {
       return `<main class="handoff-standalone"><section class="handoff-complete-card"><span class="success-mark" aria-hidden="true">✓</span><p class="section-kicker">Submission retained</p><h1>Employee form complete</h1><p>Your answers and typed signature were bound to the exact controlled form schema. The safety dashboard will show this item as completed.</p><dl><div><dt>Submitted</dt><dd>${escapeHtml(formatShortDate(handoff.receipt?.submitted_at, "Just now"))}</dd></div><div><dt>Evidence SHA-256</dt><dd><code>${escapeHtml(handoff.receipt?.submission_sha256 || "")}</code></dd></div></dl><button class="button primary" type="button" data-action="close-handoff-window">Close this tab</button></section></main>`;
@@ -7260,7 +7260,7 @@
               <input id="handoff-typed-name" name="typed_name" autocomplete="name" required placeholder="${escapeHtml(item.employeeName)}">
               <p class="field-hint">Your typed name must match the assigned employee name shown above.</p>
             </section>
-            <section class="signing-evidence"><strong>What SafetyOps records</strong><span>The exact form version and field hashes, answers, employee name, authenticated facilitator identity, consent, timestamp, overdue state, and canonical evidence SHA-256. Some regulated records may still require additional identity checks or a wet signature.</span></section>
+            <section class="signing-evidence"><strong>What Taylor Safe records</strong><span>The exact form version and field hashes, answers, employee name, authenticated facilitator identity, consent, timestamp, overdue state, and canonical evidence SHA-256. Some regulated records may still require additional identity checks or a wet signature.</span></section>
             <footer><span>This one-time link expires at ${escapeHtml(new Date(item.expiresAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))}.</span><button class="button primary" type="submit">Submit completed form</button></footer>
           </form>
         </section>
@@ -7712,7 +7712,7 @@
     if (handoffWindow) {
       handoffWindow.opener = null;
       handoffWindow.document.title = "Opening secure employee form";
-      handoffWindow.document.body.textContent = "Opening the secure SafetyOps employee form…";
+      handoffWindow.document.body.textContent = "Opening the secure Taylor Safe employee form…";
     }
     const result = await supabaseClient.rpc("begin_employee_form_handoff", {
       target_assignment_id: assignment.id
@@ -7729,7 +7729,7 @@
       return;
     }
     if (!handoffWindow) {
-      showToast("Pop-up blocked", "Allow pop-ups for SafetyOps, then select Start tablet form again. The unused session will be revoked automatically.");
+      showToast("Pop-up blocked", "Allow pop-ups for Taylor Safe, then select Start tablet form again. The unused session will be revoked automatically.");
       return;
     }
     const handoffUrl = new URL(window.location.href);
