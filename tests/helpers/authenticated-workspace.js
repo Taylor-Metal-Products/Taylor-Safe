@@ -883,9 +883,33 @@ function fakeSupabaseScript(options = {}) {
   if (options.tableOverrides) {
     Object.assign(tables, options.tableOverrides);
   }
+  const authUser = options.authUser || {
+    ...AUTH_USER,
+    ...(options.teamAccess ? { email_confirmed_at: "2026-07-30T16:00:00.000Z" } : {})
+  };
+  if (options.noMembership) tables.company_memberships = [];
+  if (options.teamAccess) {
+    tables.company_team_invites = [{
+      id: "b0000000-0000-4000-8000-000000000001",
+      company_id: WORKSPACE_FIXTURE.company.id,
+      email: authUser.email,
+      role: "safety_manager",
+      default_location_id: WORKSPACE_FIXTURE.locations[0].id,
+      location_ids: [],
+      status: options.teamInviteStatus || "pending",
+      created_at: "2026-07-30T16:00:00.000Z",
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    }];
+  }
   const seed = {
-    session: { user: AUTH_USER },
+    session: options.signedOut ? null : { user: authUser },
+    signInSession: { user: authUser },
     companyId: WORKSPACE_FIXTURE.company.id,
+    teamAccess: options.teamAccess === true,
+    teamAccessUnavailable: options.teamAccessUnavailable === true,
+    teamAcceptError: options.teamAcceptError || null,
+    delayTeamAccept: options.delayTeamAccept === true,
+    delayTeamList: options.delayTeamList === true,
     tables
   };
 
@@ -901,6 +925,9 @@ function fakeSupabaseScript(options = {}) {
       var isolatedHandoffClient = /handoff/i.test(window.location.search + window.location.hash);
       var incidentSequence = 1000;
       var archiveQueryError = ${options.archiveQueryError ? "true" : "false"};
+      var authCallback = null;
+      var pendingTeamAccept = null;
+      var pendingTeamList = null;
 
       function clone(value) {
         return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -2082,29 +2109,121 @@ function fakeSupabaseScript(options = {}) {
         return { data: null, error: { message: "Employee document action is invalid." } };
       }
 
+      // These contract doubles exercise browser behavior, not hosted RLS/Auth guarantees.
+      function teamAccessRpc(name, payload) {
+        if (seed.teamAccessUnavailable) {
+          return { data: null, error: { code: "PGRST202", message: "Could not find the function public." + name } };
+        }
+        if (name === "accept_company_team_invite") {
+          var invitation = (tables.company_team_invites || []).find(function (row) {
+            return row.id === payload.target_invite_id;
+          });
+          if (seed.teamAcceptError || !session || !session.user.email_confirmed_at || !invitation
+            || invitation.email.toLowerCase() !== session.user.email.toLowerCase()
+            || !["pending", "accepted"].includes(invitation.status)) {
+            return { data: null, error: { message: seed.teamAcceptError || "Invitation unavailable for this account." } };
+          }
+          if (!tables.company_memberships.some(function (row) { return row.user_id === session.user.id; })) {
+            tables.company_memberships.push({
+              company_id: seed.companyId, user_id: session.user.id, role: invitation.role, active: true,
+              default_location_id: invitation.default_location_id,
+              profiles: { full_name: session.user.user_metadata?.full_name || "Invited teammate" },
+              location_memberships: invitation.location_ids.map(function (id) { return { location_id: id }; })
+            });
+          }
+          invitation.status = "accepted";
+          return { data: { company_id: seed.companyId, role: invitation.role, status: "accepted" }, error: null };
+        }
+        var actor = tables.company_memberships.find(function (row) {
+          return row.user_id === session?.user?.id && row.active && row.role === "corporate_admin";
+        });
+        if (!actor) return { data: null, error: { message: "Company administrator access required." } };
+        if (name === "list_company_team_access") {
+          return {
+            data: {
+              members: tables.company_memberships.map(function (row) {
+                return Object.assign({}, row, {
+                  full_name: row.profiles?.full_name || "Invited teammate",
+                  email: row.user_id === session.user.id ? session.user.email : "teammate@example.test",
+                  location_ids: (row.location_memberships || []).map(function (item) { return item.location_id; })
+                });
+              }),
+              invitations: clone(tables.company_team_invites || [])
+            },
+            error: null
+          };
+        }
+        if (name === "create_company_team_invite") {
+          var companyWide = ["safety_manager", "auditor"].includes(payload.target_role);
+          var locationIds = payload.target_location_ids || [];
+          var validLocations = tables.locations.map(function (row) { return row.id; });
+          if (payload.target_company_id !== seed.companyId || payload.target_role === "corporate_admin"
+            || !validLocations.includes(payload.target_default_location_id)
+            || (!companyWide && (!locationIds.length || !locationIds.includes(payload.target_default_location_id)))
+            || locationIds.some(function (id) { return !validLocations.includes(id); })) {
+            return { data: null, error: { message: "Choose authorized locations and a permitted role." } };
+          }
+          var createdInvite = {
+            id: crypto.randomUUID(), company_id: seed.companyId,
+            email: payload.target_email.toLowerCase().trim(), role: payload.target_role,
+            default_location_id: payload.target_default_location_id,
+            location_ids: companyWide ? [] : clone(locationIds), status: "pending",
+            created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 604800000).toISOString()
+          };
+          tables.company_team_invites.push(createdInvite);
+          return { data: clone(createdInvite), error: null };
+        }
+        if (name === "revoke_company_team_invite") {
+          var revokedInvite = tables.company_team_invites.find(function (row) { return row.id === payload.target_invite_id; });
+          if (revokedInvite) revokedInvite.status = "revoked";
+          return { data: null, error: null };
+        }
+        return { data: null, error: { message: "Unexpected team-access RPC." } };
+      }
+
       var client = {
         auth: {
+          initialize: function () {
+            return Promise.resolve({ error: null });
+          },
           getSession: function () {
             return Promise.resolve({
               data: { session: isolatedHandoffClient ? null : clone(session) },
               error: null
             });
           },
-          onAuthStateChange: function () {
+          getUser: function () {
+            return Promise.resolve({ data: { user: clone(session?.user || null) }, error: null });
+          },
+          onAuthStateChange: function (callback) {
+            authCallback = callback;
             return { data: { subscription: { unsubscribe: function () {} } } };
           },
           signOut: function () {
             session = null;
             calls.push({ method: "signOut" });
+            if (seed.teamAccess && authCallback) void authCallback("SIGNED_OUT", null);
             return Promise.resolve({ error: null });
           },
           signInWithPassword: function (payload) {
             calls.push({ method: "signIn", payload: clone(payload) });
+            if (seed.teamAccess) {
+              session = clone(seed.signInSession);
+              if (authCallback) void authCallback("SIGNED_IN", clone(session));
+            }
             return Promise.resolve({ data: { session: clone(session) }, error: null });
           },
           signUp: function (payload) {
             calls.push({ method: "signUp", payload: clone(payload) });
-            return Promise.resolve({ data: { session: clone(session), user: clone(seed.session.user) }, error: null });
+            return Promise.resolve({ data: { session: clone(session), user: clone(seed.signInSession.user) }, error: null });
+          },
+          resetPasswordForEmail: function (email, resetOptions) {
+            calls.push({ method: "resetPassword", email: email, options: clone(resetOptions) });
+            return Promise.resolve({ data: {}, error: null });
+          },
+          updateUser: function (payload) {
+            calls.push({ method: "updateUser", payload: clone(payload) });
+            return Promise.resolve({ data: { user: clone(session?.user || null) }, error: null });
           }
         },
         from: function (tableName) {
@@ -2126,6 +2245,21 @@ function fakeSupabaseScript(options = {}) {
             if (recordedPayload?.token) recordedPayload.token = "[redacted]";
           }
           calls.push({ method: "rpc", name: name, payload: recordedPayload });
+          if (["list_company_team_access", "create_company_team_invite", "revoke_company_team_invite", "accept_company_team_invite"].includes(name)) {
+            if (name === "accept_company_team_invite" && seed.delayTeamAccept) {
+              var acceptanceResult = teamAccessRpc(name, payload);
+              return new Promise(function (resolve) {
+                pendingTeamAccept = function () { resolve(acceptanceResult); };
+              });
+            }
+            if (name === "list_company_team_access" && seed.delayTeamList) {
+              var listResult = teamAccessRpc(name, payload);
+              return new Promise(function (resolve) {
+                pendingTeamList = function () { resolve(listResult); };
+              });
+            }
+            return Promise.resolve(teamAccessRpc(name, payload));
+          }
           if ([
             "assign_employee_form",
             "begin_employee_form_handoff",
@@ -2304,6 +2438,24 @@ function fakeSupabaseScript(options = {}) {
       };
 
       window.__safetyOpsFakeDb = { tables: tables, calls: calls };
+      window.__emitSafetyOpsAuthState = async function (event, nextSession) {
+        session = clone(nextSession || null);
+        if (authCallback) await authCallback(event, session);
+      };
+      window.__resolveSafetyOpsTeamAccept = function () {
+        if (!pendingTeamAccept) return false;
+        var resolve = pendingTeamAccept;
+        pendingTeamAccept = null;
+        resolve();
+        return true;
+      };
+      window.__resolveSafetyOpsTeamList = function () {
+        if (!pendingTeamList) return false;
+        var resolve = pendingTeamList;
+        pendingTeamList = null;
+        resolve();
+        return true;
+      };
       window.supabase = {
         createClient: function () {
           return client;
@@ -2327,6 +2479,7 @@ async function configureAuthenticatedWorkspace(page, options = {}) {
       window.SAFETYOPS_ENABLE_LOCAL_PRIVATE_OVERLAY = false;
       window.SAFETYOPS_ENABLE_LOCAL_COMPANY_FIXTURE = false;
       window.SAFETYOPS_ENABLE_LOCAL_UPLOAD_STAGING = true;
+      window.SAFETYOPS_ALLOW_PUBLIC_SIGNUP = false;
     `
   }));
 }

@@ -31,6 +31,11 @@
   const uiStoragePrefix = "safetyops.ui.";
   const authHashParameters = new URLSearchParams(window.location.hash.replace(/^#/, ""));
   const authQueryParameters = new URLSearchParams(window.location.search);
+  const teamInvitePattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  let pendingTeamInviteId = teamInvitePattern.test(authQueryParameters.get("join") || "")
+    ? authQueryParameters.get("join") : "";
+  const invalidTeamInviteLink = authQueryParameters.has("join") && !pendingTeamInviteId;
+  let teamAccessSequence = 0;
   const employeeHandoffToken = authHashParameters.get("handoff") || "";
   const isEmployeeHandoffMode = /^[0-9a-f]{64}$/.test(employeeHandoffToken);
   const authQueryFlowHint = ["invite", "recovery"].includes(authQueryParameters.get("auth"))
@@ -116,6 +121,8 @@
     authUser: null,
     authMessage: "",
     authBusy: false,
+    teamAccess: { status: "idle", members: [], invitations: [], message: "", copyText: "", busy: false },
+    teamInviteDraft: { email: "", role: "safety_manager", defaultLocationId: "", locationIds: [] },
     handoffRefreshPending: false,
     employeeHandoff: {
       status: isEmployeeHandoffMode ? "loading" : "inactive",
@@ -841,6 +848,19 @@
         <button class="button primary auth-submit" type="button" data-action="retry-workspace">Retry workspace</button>
         <button class="button auth-submit" type="button" data-action="auth-sign-out">Sign out</button>
       `;
+    } else if (state.authStatus === "join-company") {
+      content = `
+        <div class="auth-card-heading">
+          <span class="auth-step">Company invitation</span>
+          <h2>Join your company</h2>
+          <p>You are signed in as ${escapeHtml(state.authUser?.email || "your account")}. Accept only if your administrator sent you this invitation.</p>
+        </div>
+        ${message}
+        <div class="auth-boundary-note"><strong>Your own account, approved access</strong><span>The invitation must match your account email and still be active. It assigns the role and locations chosen by your administrator.</span></div>
+        <button class="button primary auth-submit" type="button" data-action="accept-team-invite" ${state.authBusy ? "disabled" : ""}>${state.authBusy ? "Joining…" : "Accept invitation"}</button>
+        <button class="button auth-submit" type="button" data-action="dismiss-team-invite" ${state.authBusy ? "disabled" : ""}>Continue without invitation</button>
+        <button class="button auth-submit" type="button" data-action="auth-sign-out">Sign out</button>
+      `;
     } else if (state.authStatus === "provisioning-pending") {
       content = `
         <div class="auth-card-heading">
@@ -890,14 +910,16 @@
         </form>
       `;
     } else {
-      const signingUp = publicSignupEnabled && state.authMode === "sign-up";
+      const allowSignup = publicSignupEnabled && !pendingTeamInviteId && !invalidTeamInviteLink;
+      const signingUp = allowSignup && state.authMode === "sign-up";
       content = `
         <div class="auth-card-heading">
           <span class="auth-step">Secure company access</span>
           <h2>${signingUp ? "Create your account" : "Welcome back"}</h2>
-          <p>${signingUp ? "Create a confirmed account for an approved deployment." : "Sign in to your private company safety workspace."}</p>
+          <p>${pendingTeamInviteId ? "Sign in with the individual account your administrator created for the invited email address. You will review the invitation before joining." : signingUp ? "Create a confirmed account for an approved deployment." : "Sign in to your private company safety workspace."}</p>
         </div>
-        ${publicSignupEnabled ? `<div class="tabs auth-tabs" role="tablist" aria-label="Account access">
+        ${invalidTeamInviteLink ? `<div class="auth-message" role="status">Invalid invitation link. Ask your administrator for a fresh copy. You can still sign in to an existing workspace.</div>` : ""}
+        ${allowSignup ? `<div class="tabs auth-tabs" role="tablist" aria-label="Account access">
           <button class="tab ${!signingUp ? "active" : ""}" type="button" role="tab" aria-selected="${!signingUp}" data-action="auth-mode" data-mode="sign-in">Sign in</button>
           <button class="tab ${signingUp ? "active" : ""}" type="button" role="tab" aria-selected="${signingUp}" data-action="auth-mode" data-mode="sign-up">Create account</button>
         </div>` : ""}
@@ -1001,6 +1023,9 @@
   }
 
   function purgeTenantWorkspace() {
+    teamAccessSequence += 1;
+    state.teamAccess = { status: "idle", members: [], invitations: [], message: "", copyText: "", busy: false };
+    state.teamInviteDraft = { email: "", role: "safety_manager", defaultLocationId: "", locationIds: [] };
     data.company = null;
     data.currentUser = null;
     data.locations = [];
@@ -2488,6 +2513,15 @@
       render();
       return;
     }
+    if (pendingTeamInviteId) {
+      purgeTenantWorkspace();
+      state.authUser = session.user;
+      state.authStatus = "join-company";
+      state.authBusy = false;
+      state.authMessage = "";
+      render();
+      return;
+    }
     state.authStatus = "loading";
     state.authBusy = false;
     render();
@@ -2637,7 +2671,7 @@
         return;
       }
 
-      if (!publicSignupEnabled) {
+      if (!publicSignupEnabled || pendingTeamInviteId || invalidTeamInviteLink) {
         throw new Error("Account creation is invite-only. Ask a Taylor Safe administrator for access.");
       }
 
@@ -6359,9 +6393,250 @@
     `;
   }
 
+  function canManageTeamAccess() {
+    return isSignedInCompanyMember() && currentRawRole() === "corporate_admin";
+  }
+
+  function teamRoleHasCompanyScope(role) {
+    return ["safety_manager", "auditor"].includes(role);
+  }
+
+  function teamInvitationStatus(invitation) {
+    return invitation.status === "pending" && Date.parse(invitation.expires_at) <= Date.now()
+      ? "expired" : invitation.status;
+  }
+
+  function clearTeamInviteLink() {
+    pendingTeamInviteId = "";
+    const url = new URL(window.location.href);
+    url.searchParams.delete("join");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
+  async function acceptTeamInvite() {
+    if (state.authStatus !== "join-company" || state.authBusy || !pendingTeamInviteId || !state.authUser) return;
+    const user = state.authUser;
+    const epoch = authTransitionEpoch;
+    const inviteId = pendingTeamInviteId;
+    const isCurrent = () => epoch === authTransitionEpoch && state.authUser?.id === user.id && pendingTeamInviteId === inviteId;
+    state.authBusy = true;
+    state.authMessage = "";
+    render();
+    try {
+      const result = await supabaseClient.rpc("accept_company_team_invite", { target_invite_id: inviteId });
+      if (!isCurrent()) return;
+      const accepted = Array.isArray(result.data) ? result.data[0] : result.data;
+      if (result.error || accepted?.status !== "accepted" || !accepted.company_id) throw new Error("join-failed");
+      clearTeamInviteLink();
+      state.authStatus = "loading";
+      state.authBusy = false;
+      render();
+      await loadAuthenticatedWorkspace(user, epoch);
+      if (epoch === authTransitionEpoch && state.authStatus === "ready") {
+        showToast("Company access accepted", "Your approved workspace is ready.");
+      }
+    } catch (_error) {
+      if (!isCurrent()) return;
+      state.authBusy = false;
+      state.authMessage = "This invitation could not be accepted. Check that you are using the invited, verified account, or ask your administrator to check the invitation and company access setup.";
+      render();
+    }
+  }
+
+  function teamAccessContext() {
+    const companyId = data.company?.id;
+    const userId = state.authUser?.id;
+    const epoch = authTransitionEpoch;
+    return {
+      companyId,
+      isCurrent: () => epoch === authTransitionEpoch && data.company?.id === companyId
+        && state.authUser?.id === userId && canManageTeamAccess()
+    };
+  }
+
+  async function loadTeamAccess() {
+    if (!canManageTeamAccess() || state.teamAccess.busy) return;
+    const context = teamAccessContext();
+    const sequence = ++teamAccessSequence;
+    state.teamAccess.status = "loading";
+    state.teamAccess.message = "";
+    render();
+    try {
+      const result = await supabaseClient.rpc("list_company_team_access", { target_company_id: context.companyId });
+      if (!context.isCurrent() || sequence !== teamAccessSequence) return;
+      if (result.error) {
+        const missing = ["42883", "PGRST202"].includes(result.error.code);
+        state.teamAccess.status = missing ? "unavailable" : "error";
+        state.teamAccess.members = [];
+        state.teamAccess.invitations = [];
+        state.teamAccess.copyText = "";
+        state.teamAccess.message = missing
+          ? "Your administrator must finish the company access setup before invitations can be created. Your existing workspace is unchanged."
+          : "Team access could not be loaded. Check your connection and administrator permissions, then try again.";
+      } else if (Array.isArray(result.data?.members) && Array.isArray(result.data?.invitations)) {
+        state.teamAccess.status = "ready";
+        state.teamAccess.members = result.data.members;
+        state.teamAccess.invitations = result.data.invitations;
+      } else {
+        throw new Error("invalid-team-response");
+      }
+      render();
+    } catch (_error) {
+      if (!context.isCurrent() || sequence !== teamAccessSequence) return;
+      state.teamAccess.status = "error";
+      state.teamAccess.members = [];
+      state.teamAccess.invitations = [];
+      state.teamAccess.copyText = "";
+      state.teamAccess.message = "Team access could not be loaded. Try again or contact your administrator.";
+      render();
+    }
+  }
+
+  function readTeamInviteDraft(form) {
+    const values = new FormData(form);
+    return {
+      email: String(values.get("email") || "").trim(),
+      role: String(values.get("role") || ""),
+      defaultLocationId: String(values.get("default_location_id") || ""),
+      locationIds: values.getAll("location_ids").map(String)
+    };
+  }
+
+  async function createTeamInvite(form) {
+    if (!canManageTeamAccess() || state.teamAccess.status !== "ready" || state.teamAccess.busy) return;
+    const draft = readTeamInviteDraft(form);
+    state.teamInviteDraft = draft;
+    const companyWide = teamRoleHasCompanyScope(draft.role);
+    const locationIds = companyWide ? data.locations.map((location) => location.id) : draft.locationIds;
+    if (!["safety_manager", "auditor", "location_manager", "supervisor", "worker"].includes(draft.role)
+      || !locationIds.length || !locationIds.includes(draft.defaultLocationId)
+      || locationIds.some((id) => !data.locations.some((location) => location.id === id))) {
+      state.teamAccess.message = "Choose a valid role and at least one location, including the default location.";
+      render();
+      return;
+    }
+    const context = teamAccessContext();
+    state.teamAccess.busy = true;
+    state.teamAccess.message = "";
+    state.teamAccess.copyText = "";
+    render();
+    try {
+      const result = await supabaseClient.rpc("create_company_team_invite", {
+        target_company_id: context.companyId,
+        target_email: draft.email,
+        target_role: draft.role,
+        target_default_location_id: draft.defaultLocationId,
+        target_location_ids: locationIds
+      });
+      if (!context.isCurrent()) return;
+      if (result.error || !teamInvitePattern.test(result.data?.id || "")) throw new Error("create-failed");
+      state.teamAccess.busy = false;
+      state.teamInviteDraft = { ...draft, email: "" };
+      await loadTeamAccess();
+      if (!context.isCurrent()) return;
+      showToast("Invitation created", "Copy the invitation and send it yourself. No email was sent and no login account was created.");
+    } catch (_error) {
+      if (!context.isCurrent()) return;
+      state.teamAccess.busy = false;
+      state.teamAccess.message = "Invitation could not be created. Check the email, locations, and existing invitations or memberships, then try again.";
+      render();
+    }
+  }
+
+  async function copyTeamInvite(inviteId) {
+    if (!canManageTeamAccess() || state.teamAccess.busy) return;
+    const invitation = state.teamAccess.invitations.find((item) => item.id === inviteId);
+    if (!invitation || teamInvitationStatus(invitation) !== "pending" || !teamInvitePattern.test(invitation.id)) return;
+    const url = new URL(window.location.pathname, window.location.origin);
+    url.searchParams.set("join", invitation.id);
+    const message = `You have been invited to ${data.company.name} in Taylor Safe.\nSign in with your individual account using ${invitation.email}, then choose Accept invitation. Your administrator must create your login account separately before you can sign in.\n${url}\nThis invitation expires ${new Date(invitation.expires_at).toLocaleString()}. No password is included in this message.`;
+    state.teamAccess.copyText = message;
+    render();
+    const context = teamAccessContext();
+    try {
+      await navigator.clipboard.writeText(message);
+      if (context.isCurrent()) showToast("Invitation copied", "Paste it into your email or message to the invited person.");
+    } catch (_error) {
+      if (context.isCurrent()) showToast("Copy the invitation below", "Automatic copying is unavailable. Select and copy the invitation text.");
+    }
+  }
+
+  async function revokeTeamInvite(inviteId) {
+    if (!canManageTeamAccess() || state.teamAccess.busy) return;
+    const invitation = state.teamAccess.invitations.find((item) => item.id === inviteId);
+    if (!invitation || teamInvitationStatus(invitation) !== "pending") return;
+    if (!window.confirm("Revoke this invitation? It will no longer grant company access. Existing memberships are not removed.")) return;
+    const context = teamAccessContext();
+    state.teamAccess.busy = true;
+    state.teamAccess.copyText = "";
+    state.teamAccess.message = "";
+    render();
+    try {
+      const result = await supabaseClient.rpc("revoke_company_team_invite", { target_invite_id: inviteId });
+      if (!context.isCurrent()) return;
+      if (result.error) throw new Error("revoke-failed");
+      state.teamAccess.busy = false;
+      await loadTeamAccess();
+      if (context.isCurrent()) showToast("Invitation revoked", "The invitation can no longer be used.");
+    } catch (_error) {
+      if (!context.isCurrent()) return;
+      state.teamAccess.busy = false;
+      state.teamAccess.message = "Invitation could not be revoked. Refresh the list to check its latest status.";
+      render();
+    }
+  }
+
+  function renderTeamAccess() {
+    if (!canManageTeamAccess()) return "";
+    const team = state.teamAccess;
+    const draft = state.teamInviteDraft;
+    const defaultLocationId = draft.defaultLocationId || data.locations[0]?.id || "";
+    const ready = team.status === "ready";
+    const busy = team.busy || team.status === "loading";
+    const scopeText = (record) => teamRoleHasCompanyScope(record.role) || record.role === "corporate_admin"
+      ? "All company locations" : (record.location_ids || []).map(locationName).join(", ") || "No assigned locations";
+    return `<section class="settings-card team-access-card" aria-labelledby="team-access-heading">
+      <div class="team-access-heading"><div><p class="section-kicker">People who sign in</p><h2 id="team-access-heading">Team access</h2></div>
+        <button class="button" type="button" data-action="load-team-access" ${busy ? "disabled" : ""}>${team.status === "idle" ? "Manage team access" : "Refresh team access"}</button></div>
+      <p>Login accounts are created separately by your administrator. Here, invite an account to this company and choose its access. Copy and send the invitation yourself—no email is sent automatically. Employee safety records do not require a login.</p>
+      ${team.status === "loading" ? `<p role="status">Loading team access…</p>` : ""}
+      ${team.status === "unavailable" ? `<h3>Team access setup required</h3>` : ""}
+      ${team.message ? `<p class="auth-message" role="status">${escapeHtml(team.message)}</p>` : ""}
+      ${!ready ? `<p class="field-hint">${team.status === "idle" ? "Load the team to view accounts and create invitations." : "Invitation creation is unavailable until the team can be loaded."}</p>` : `
+        <div class="team-access-layout">
+          <form id="team-invite-form" class="team-invite-form">
+            <h3>Invite teammate</h3>
+            <div class="field"><label for="team-invite-email">Email</label><input id="team-invite-email" name="email" type="email" autocomplete="off" maxlength="254" value="${escapeHtml(draft.email)}" required></div>
+            <div class="field"><label for="team-invite-role">Role</label><select id="team-invite-role" name="role" required>
+              ${["safety_manager", "auditor", "location_manager", "supervisor", "worker"].map((role) => `<option value="${role}" ${draft.role === role ? "selected" : ""}>${escapeHtml(readableStatus(role))}</option>`).join("")}
+            </select></div>
+            <p class="field-hint">${teamRoleHasCompanyScope(draft.role) ? draft.role === "auditor" ? "Read-only access across all company locations." : "Manages safety records across all company locations. Cannot invite other users." : "Access is limited to the selected locations and the permissions of this role."} Corporate administrator access is not granted through invitations.</p>
+            <div class="field"><label for="team-invite-default-location">Default location</label><select id="team-invite-default-location" name="default_location_id" required>
+              ${data.locations.map((location) => `<option value="${escapeHtml(location.id)}" ${location.id === defaultLocationId ? "selected" : ""}>${escapeHtml(location.name)}</option>`).join("")}
+            </select></div>
+            ${teamRoleHasCompanyScope(draft.role) ? `<p class="field-hint">Location access: all company locations, including future locations. The default only chooses the opening view.</p>` : `<fieldset class="team-location-options"><legend>Location access</legend>${data.locations.map((location) => `<label><input type="checkbox" name="location_ids" value="${escapeHtml(location.id)}" ${draft.locationIds.includes(location.id) ? "checked" : ""}>${escapeHtml(location.name)}</label>`).join("")}<p class="field-hint">Select at least one location, including the default.</p></fieldset>`}
+            <p class="field-hint">Invitations expire after 7 days. They require the matching, verified login account and can only be accepted once.</p>
+            <button class="button primary" type="submit" ${busy || !data.locations.length ? "disabled" : ""}>${team.busy ? "Saving…" : "Create invitation"}</button>
+          </form>
+          <div class="team-access-records">
+            <h3>Invitations</h3>
+            <div class="team-access-list">${team.invitations.map((item) => {
+              const status = teamInvitationStatus(item);
+              return `<article class="team-invitation"><strong>${escapeHtml(item.email)}</strong><span>${escapeHtml(readableStatus(item.role))} · ${escapeHtml(scopeText(item))}</span><span>${escapeHtml(readableStatus(status))} · Expires ${escapeHtml(new Date(item.expires_at).toLocaleDateString())}</span>
+                ${status === "pending" ? `<div class="team-invite-actions"><button class="button small" type="button" data-action="copy-team-invite" data-invite-id="${escapeHtml(item.id)}" ${busy ? "disabled" : ""}>Copy invite</button><button class="button small" type="button" data-action="revoke-team-invite" data-invite-id="${escapeHtml(item.id)}" ${busy ? "disabled" : ""}>Revoke invitation</button></div>` : ""}</article>`;
+            }).join("") || `<p>No invitations yet.</p>`}</div>
+            ${team.copyText ? `<div class="field team-copy-message"><label for="team-copy-message">Copyable invitation</label><textarea id="team-copy-message" rows="7" readonly>${escapeHtml(team.copyText)}</textarea></div>` : ""}
+            <h3>Company accounts</h3><p class="field-hint">Accounts shown here already have company membership. This list does not include every login account created by your administrator.</p>
+            <div class="team-access-list">${team.members.map((member) => `<article class="team-member"><strong>${escapeHtml(member.full_name || member.email)}</strong><span>${escapeHtml(member.email)}</span><span>${escapeHtml(readableStatus(member.role))} · ${escapeHtml(scopeText(member))}</span><span>${member.active ? "Active" : "Inactive"}</span></article>`).join("") || `<p>No company accounts returned.</p>`}</div>
+          </div>
+        </div>`}
+    </section>`;
+  }
+
   function renderSettings() {
     return `
       ${renderPageHeading()}
+      ${renderTeamAccess()}
       <section class="settings-grid">
         <article class="settings-card">
           <p class="section-kicker">Preferences</p>
@@ -8456,6 +8731,33 @@
       return;
     }
 
+    if (action === "accept-team-invite") {
+      acceptTeamInvite();
+      return;
+    }
+    if (action === "dismiss-team-invite" && state.authUser && !state.authBusy) {
+      clearTeamInviteLink();
+      state.authMessage = "";
+      state.authStatus = "loading";
+      render();
+      loadAuthenticatedWorkspace(state.authUser);
+      return;
+    }
+    if (action === "load-team-access") {
+      const form = document.querySelector("#team-invite-form");
+      if (form) state.teamInviteDraft = readTeamInviteDraft(form);
+      loadTeamAccess();
+      return;
+    }
+    if (action === "copy-team-invite") {
+      copyTeamInvite(target.dataset.inviteId);
+      return;
+    }
+    if (action === "revoke-team-invite") {
+      revokeTeamInvite(target.dataset.inviteId);
+      return;
+    }
+
     if (action === "auth-sign-out") {
       handleAuthSignOut();
       return;
@@ -8824,7 +9126,21 @@
     }
   });
 
+  document.addEventListener("input", (event) => {
+    if (event.target.closest("#team-invite-form")) {
+      state.teamInviteDraft = readTeamInviteDraft(event.target.form);
+    }
+  });
+
   document.addEventListener("change", (event) => {
+    if (event.target.closest("#team-invite-form")) {
+      state.teamInviteDraft = readTeamInviteDraft(event.target.form);
+      if (event.target.id === "team-invite-role") {
+        render();
+        document.querySelector("#team-invite-role")?.focus();
+      }
+      return;
+    }
     if (event.target.dataset.calendarKind) {
       const kind = event.target.dataset.calendarKind;
       if (!calendarKinds.some((item) => item.id === kind)) return;
@@ -8994,6 +9310,11 @@
   });
 
   document.addEventListener("submit", (event) => {
+    if (event.target.id === "team-invite-form") {
+      event.preventDefault();
+      createTeamInvite(event.target);
+      return;
+    }
     if (event.target.id === "employee-handoff-form") {
       event.preventDefault();
       handleEmployeeHandoffSubmit(event.target);

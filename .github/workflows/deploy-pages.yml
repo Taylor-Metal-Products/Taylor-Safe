@@ -36,6 +36,9 @@ jobs:
       - name: Run responsive application tests
         run: npm test
 
+      - name: Run local team invitation database tests
+        run: npm run test:team-access:db
+
       - name: Build static site
         run: npm run build
 

@@ -22,6 +22,7 @@ The browser implementation, eighteen ordered migrations, and three Edge Function
 ## Current source implementation
 
 - Invite-only Supabase email/password authentication, password setup/recovery, and company membership bootstrap
+- Proposed administrator Team access screen with copyable, email-matched company invitations; Louie still creates Auth accounts manually. Backend installation and frontend release remain pending; see the [owner change request](docs/supabase-change-requests/2026-09-18-team-access-invitations.md).
 - Administrator-controlled first-company and initial-location provisioning
 - Tenant-safe creation of additional locations
 - Company- and location-scoped operational views
@@ -48,7 +49,7 @@ The browser implementation, eighteen ordered migrations, and three Edge Function
 - Service-only invite-owner bootstrap, retirement of both browser self-onboarding RPCs, single-active-company membership, attributable membership audit, last-administrator protection, state-aware location creation, database-derived jurisdiction review, and resolved-jurisdiction program gating in migration `011`
 - Row Level Security, immutable version records, append-only audit records, and private Storage design
 - Bounded browser queries, with explicit server pagination still required before large-scale use
-- Responsive desktop/mobile interface; the latest full local Playwright run completed with 106 passed, 8 conditional/project skips, and 0 failures
+- Responsive desktop/mobile interface; the latest full local Playwright run completed with 201 passed, 9 conditional/project skips, and 0 failures. See [QA evidence and boundaries](docs/QA_LOG.md).
 - GitHub Pages build and deployment workflow
 
 Some administrative workflows remain intentionally unavailable until their server-side services are deployed. In particular, SafetyOps does **not** yet provide a production form-original upload service. The checked-in `sign-form-file` Edge Function authorizes downloads of already committed, verified form originals; it is not an upload, quarantine, malware-scan, or commit service. The separate employee-PDF service provides short-lived upload sessions, exact-size/SHA-256 verification, recoverable processing leases, quarantine, and a service-only scan attestation bound to the stored hash. It releases a PDF only when a configured trusted scanner reports those exact bytes `clean`; with no scanner configured, the document remains non-releasable with malware status `unavailable`. Development-only local upload staging is disabled by default and is never the production system of record.
@@ -100,7 +101,7 @@ The public GitHub repository must be published from the sanitized clean-history 
 ## Local development
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -115,6 +116,7 @@ Authentication persistence is disabled by default because all repositories under
 ```bash
 npm run build
 npm run test
+npm run test:team-access:db
 npm run test:public-boundary
 npm run generate:public-attestation-key # one-time release-authority setup
 npm run attest:public-boundary
@@ -128,7 +130,7 @@ npm run sync:osha
 
 ## Supabase deployment order
 
-Use a separate Supabase project for SafetyOps:
+Historical initial-project setup follows. It is not authorization to create a new project or rerun migrations on the existing company. Louie alone performs hosted changes after reviewing the matching change request. In particular, the new team-access migration is **proposed, not applied**; follow its specific [preflight and rollout order](docs/supabase-change-requests/2026-09-18-team-access-invitations.md), not a blanket migration push.
 
 1. Apply every SQL file in `supabase/migrations/` in filename order, currently `202607300001` through `202608030018`. Migrations `016` through `018` have hosted application records bound to their reviewed source SHA-256 values. Migrations `013` through `015` remain recorded under their original deployment versions, which is not a checksum assertion for those earlier files; database behavior still requires the hosted catalog, role, and workflow tests listed in the release checklist.
 2. Deploy the controlled-download function:

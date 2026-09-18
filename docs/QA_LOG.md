@@ -3,6 +3,34 @@
 LFES rule: record what ran, what it proved, and what remains outside the proof
 boundary.
 
+## 2026-09-18 manual-account team invitations candidate — not deployed
+
+Added administrator-only Settings → Team access for listing company accounts,
+creating role/location invitations, copying them for manual sharing, and revoking
+pending invitations. A recipient must sign in and explicitly accept using the
+matching verified account. Auth account creation stays manual with Louie; no
+email, public signup, new-company bootstrap, platform access, or shared login is
+introduced. The backend migration is **proposed, not applied**; the UI isolates
+missing-backend errors without blocking the existing workspace.
+
+| Check | Result | Proof boundary |
+|---|---:|---|
+| Clean `npm ci` | PASS | Pinned lockfile installs, including PGlite 0.5.8 for local SQL tests. One existing moderate `qs` advisory remains in the development-server dependency chain; production-only audit reports zero advisories. Not a comprehensive dependency/security audit. |
+| Full `npm test -- --reporter=dot` | PASS: 201 passed, 9 expected skips, 0 failed (41.6s) | Desktop and Pixel 7 synthetic browser/API tests. Includes 38 new cases for no automatic signup/email, admin/role/location scope, copy fallback, revocation, missing backend, explicit join/retry, recovery precedence and stale responses after sign-out/user switching. The existing skip categories remain unchanged; no hosted authorization is inferred. |
+| `npm run test:team-access:db` | PASS: 20 passed, 0 failed (1.3s) | Actual proposed SQL, baseline table definitions and membership integrity/audit trigger bodies in PostgreSQL/WASM with synthetic Auth/session fixtures. Covers direct-grant denial, role/tenant scope, trusted email/session checks, issuer validity, duplicate/expired/revoked invites, replay and atomic rollback. Not a complete migration replay, all legacy RLS/grants, actual hosted Auth, or independent concurrent-session proof. |
+| Independent backend review | No blocking new finding | Reviewed new privilege boundaries, existing legacy membership powers, issuer validation, locking and replay. Review led to denying acceptance when the issuer's Auth account is disabled/unverified; issuer sign-out alone does not cancel approval. Existing authorized membership-management paths remain unchanged. |
+| Desktop and Pixel 7 screenshots | PASS | Synthetic Team access/copy and join confirmation screens inspected; no horizontal overflow, page errors or console errors observed. Not an actual-device or comprehensive accessibility review. |
+| `node --check app.js`, `git diff --check`, `npm run build` | PASS | Syntax, whitespace and 12-file static build. CI now includes the local SQL suite; this does not apply a migration. |
+| Hosted and release operations | NOT PERFORMED | No account, membership, schema, Auth setting, email, deployment gate or live URL changed. Owner backend execution, hosted allow/deny/concurrency checks, fresh release approval/signature and live smoke remain pending. |
+
+During test authoring, six failures reflected incorrect expected selectors or
+company-wide location payloads. Tests were corrected to the actual disclosed
+scope and visible labels; final suites pass without bypassed assertions.
+Local Supabase Advisors/migration-list checks could not connect to a local
+PostgreSQL server; no Docker-backed Supabase environment was available.
+
+See the [owner execution and rollback runbook](supabase-change-requests/2026-09-18-team-access-invitations.md).
+
 ## 2026-09-18 plain-language interface candidate — not deployed
 
 Removed provider/hosting explanations from everyday screens, including the two
