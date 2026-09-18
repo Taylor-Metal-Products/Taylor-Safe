@@ -8,6 +8,7 @@
     "build": "node scripts/build-static.js",
     "sync:osha": "node scripts/sync-osha-reference.mjs",
     "test": "playwright test",
+    "test:team-access:db": "node --test scripts/test-team-access-db.mjs",
     "test:public-boundary": "node scripts/verify-public-build.mjs",
     "generate:public-attestation-key": "node scripts/generate-public-attestation-key.mjs",
     "attest:public-boundary": "node scripts/verify-public-build.mjs --write-attestation",
@@ -15,6 +16,7 @@
     "test:smoke": "playwright test tests/smoke.spec.js"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "@playwright/test": "1.60.0",
     "http-server": "14.1.1"
   },

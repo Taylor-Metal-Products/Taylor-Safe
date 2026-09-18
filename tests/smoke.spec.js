@@ -1,10 +1,11 @@
 const { test, expect } = require("@playwright/test");
+const { expectPlainLanguageUi } = require("./helpers/plain-language-ui");
 const {
   WORKSPACE_FIXTURE,
   configureAuthenticatedWorkspace
 } = require("./helpers/authenticated-workspace");
 
-test("unconfigured public build requires Supabase and contains no demo company", async ({ page }) => {
+test("unconfigured public build requires a workspace connection and contains no demo company", async ({ page }) => {
   await page.route("**/supabase-config.js", (route) => route.fulfill({
     contentType: "application/javascript",
     body: `
@@ -16,7 +17,8 @@ test("unconfigured public build requires Supabase and contains no demo company",
   await page.goto("/");
 
   await expect(page).toHaveTitle(/^Taylor Safe(?: ·|$)/);
-  await expect(page.getByRole("heading", { name: "Connect Taylor Safe to Supabase" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Workspace connection required" })).toBeVisible();
+  await expectPlainLanguageUi(page);
   await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeHidden();
   await expect(page.getByText(WORKSPACE_FIXTURE.company.name, { exact: true })).toBeHidden();
 

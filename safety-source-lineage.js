@@ -7,6 +7,6 @@
     filesVerified: 0,
     totalBytes: 0,
     capturedOn: null,
-    storageTarget: "Private Supabase Storage"
+    storageTarget: "Private company files"
   };
 })();

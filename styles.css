@@ -1882,6 +1882,111 @@ tbody tr:hover {
   border-top: 1px solid var(--line);
 }
 
+.team-access-card {
+  margin-bottom: 18px;
+}
+
+.team-access-heading,
+.team-invite-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.team-access-heading h2 {
+  font-size: 21px;
+  margin-bottom: 8px;
+}
+
+.team-access-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.2fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.team-invite-form {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-strong);
+  min-width: 0;
+}
+
+.team-access-card .team-invite-form p {
+  margin: 0;
+}
+
+.team-location-options {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 0;
+}
+
+.team-location-options label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  font-size: 13px;
+}
+
+.team-location-options input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.team-access-list {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 22px;
+}
+
+.team-invitation,
+.team-member {
+  display: grid;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.team-invitation span,
+.team-member span {
+  color: var(--muted);
+}
+
+.team-invite-actions {
+  justify-content: flex-start;
+  margin: 4px 0 0;
+}
+
+.team-copy-message {
+  margin-bottom: 24px;
+}
+
+.team-copy-message textarea {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .team-access-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .setting-row strong {
   display: block;
   font-size: 11px;

@@ -3,6 +3,57 @@
 LFES rule: record what ran, what it proved, and what remains outside the proof
 boundary.
 
+## 2026-09-18 manual-account team invitations candidate — not deployed
+
+Added administrator-only Settings → Team access for listing company accounts,
+creating role/location invitations, copying them for manual sharing, and revoking
+pending invitations. A recipient must sign in and explicitly accept using the
+matching verified account. Auth account creation stays manual with Louie; no
+email, public signup, new-company bootstrap, platform access, or shared login is
+introduced. The backend migration is **proposed, not applied**; the UI isolates
+missing-backend errors without blocking the existing workspace.
+
+| Check | Result | Proof boundary |
+|---|---:|---|
+| Clean `npm ci` | PASS | Pinned lockfile installs, including PGlite 0.5.8 for local SQL tests. One existing moderate `qs` advisory remains in the development-server dependency chain; production-only audit reports zero advisories. Not a comprehensive dependency/security audit. |
+| Full `npm test -- --reporter=dot` | PASS: 201 passed, 9 expected skips, 0 failed (41.6s) | Desktop and Pixel 7 synthetic browser/API tests. Includes 38 new cases for no automatic signup/email, admin/role/location scope, copy fallback, revocation, missing backend, explicit join/retry, recovery precedence and stale responses after sign-out/user switching. The existing skip categories remain unchanged; no hosted authorization is inferred. |
+| `npm run test:team-access:db` | PASS: 20 passed, 0 failed (1.3s) | Actual proposed SQL, baseline table definitions and membership integrity/audit trigger bodies in PostgreSQL/WASM with synthetic Auth/session fixtures. Covers direct-grant denial, role/tenant scope, trusted email/session checks, issuer validity, duplicate/expired/revoked invites, replay and atomic rollback. Not a complete migration replay, all legacy RLS/grants, actual hosted Auth, or independent concurrent-session proof. |
+| Independent backend review | No blocking new finding | Reviewed new privilege boundaries, existing legacy membership powers, issuer validation, locking and replay. Review led to denying acceptance when the issuer's Auth account is disabled/unverified; issuer sign-out alone does not cancel approval. Existing authorized membership-management paths remain unchanged. |
+| Desktop and Pixel 7 screenshots | PASS | Synthetic Team access/copy and join confirmation screens inspected; no horizontal overflow, page errors or console errors observed. Not an actual-device or comprehensive accessibility review. |
+| `node --check app.js`, `git diff --check`, `npm run build` | PASS | Syntax, whitespace and 12-file static build. CI now includes the local SQL suite; this does not apply a migration. |
+| Hosted and release operations | NOT PERFORMED | No account, membership, schema, Auth setting, email, deployment gate or live URL changed. Owner backend execution, hosted allow/deny/concurrency checks, fresh release approval/signature and live smoke remain pending. |
+
+During test authoring, six failures reflected incorrect expected selectors or
+company-wide location payloads. Tests were corrected to the actual disclosed
+scope and visible labels; final suites pass without bypassed assertions.
+Local Supabase Advisors/migration-list checks could not connect to a local
+PostgreSQL server; no Docker-backed Supabase environment was available.
+
+See the [owner execution and rollback runbook](supabase-change-requests/2026-09-18-team-access-invitations.md).
+
+## 2026-09-18 plain-language interface candidate — not deployed
+
+Removed provider/hosting explanations from everyday screens, including the two
+technical Settings cards. Sign-in, account setup/recovery, the topbar, company
+library, local-staging guidance, and built-in save notices use task-focused copy.
+Internal source identifiers, authentication, permissions, RPC contracts, file
+handling, and developer documentation remain intact. Device-only staging limits
+remain explicit; this does not add a company upload capability.
+
+| Check | Result | Proof boundary |
+|---|---:|---|
+| Full `npm test -- --reporter=dot`, desktop and Pixel 7 | PASS: 163 passed, 9 expected skips, 0 failed (41.2s) | Final application/test sources, including provider-free visible text, tooltips, and accessible labels in configuration, sign-in, invitation, recovery, dashboard, Settings, empty/populated library, source details, and upload staging. Existing theme, auth, permission, and workflow tests pass against synthetic responses, not hosted proof. Skip categories are unchanged from the committee candidate below. |
+| Desktop and Pixel 7 screenshots | PASS | Signed-out actual app and synthetic Settings views inspected; no horizontal page overflow, visible provider copy, or JavaScript page errors observed. Not an actual-device or comprehensive accessibility review. |
+| `node --check`, `git diff --check`, `npm run build` | PASS | App/new-test syntax, whitespace, and 12-file build. Not release approval. |
+| Backend and release | NO HOSTED CHANGES; RELEASE PENDING | No schema, accounts, permissions, storage settings, credentials, deployment gates, or live URLs changed. Exact-tree owner approval/signing is still required. |
+
+Intermediate test-authoring failures were corrected: new selectors initially
+used the navigation label instead of the Settings heading, selected an ambiguous
+staging button, and attempted program details before switching from Forms to
+Programs. Final coverage uses the actual UI paths; no assertions were bypassed.
+A read-only review also caught and removed an overbroad loading-error claim that
+could have incorrectly implied an earlier successful save had not changed records.
+
 ## 2026-09-18 committee template candidate — not deployed
 
 | Check | Result | Proof boundary |

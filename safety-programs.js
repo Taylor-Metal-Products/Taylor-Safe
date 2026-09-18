@@ -7,8 +7,8 @@
       sourceFolderId: null,
       sourceUrl: null,
       sourceCapturedOn: null,
-      privacy: "Tenant data loads after authentication",
-      ingestionMode: "Create a company or sign in to load its private programs, forms, and source files.",
+      privacy: "Company access required",
+      ingestionMode: "Sign in with an approved account to view your company's programs, forms, and source files.",
       counts: {
         programs: 0,
         digitalForms: 0,
@@ -24,7 +24,7 @@
         filesVerified: 0,
         totalBytes: 0,
         capturedOn: null,
-        storageTarget: "Private Supabase Storage"
+        storageTarget: "Private company files"
       }
     },
     programs: [],
