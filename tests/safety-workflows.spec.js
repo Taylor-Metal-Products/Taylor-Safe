@@ -235,6 +235,8 @@ test("an assigned employee form is completed in a single-use anonymous tablet ha
   const handoffPage = await handoffPagePromise;
   await handoffPage.waitForLoadState("domcontentloaded");
   await expect(handoffPage.getByText("Employee form", { exact: true })).toBeVisible();
+  await expect(handoffPage).toHaveTitle(/^Taylor Safe(?: ·|$)/);
+  await expect(handoffPage.getByText("What Taylor Safe records", { exact: true })).toBeVisible();
   expect(await handoffPage.evaluate(() => window.opener)).toBeNull();
   expect(await handoffPage.evaluate(async () => {
     const client = window.supabase.createClient(

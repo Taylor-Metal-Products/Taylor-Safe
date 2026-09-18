@@ -15,7 +15,8 @@ test("unconfigured public build requires Supabase and contains no demo company",
   }));
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Connect SafetyOps to Supabase" })).toBeVisible();
+  await expect(page).toHaveTitle(/^Taylor Safe(?: ·|$)/);
+  await expect(page.getByRole("heading", { name: "Connect Taylor Safe to Supabase" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeHidden();
   await expect(page.getByText(WORKSPACE_FIXTURE.company.name, { exact: true })).toBeHidden();
 
@@ -29,6 +30,22 @@ test("unconfigured public build requires Supabase and contains no demo company",
     currentUser: null,
     locationCount: 0
   });
+});
+
+test("Taylor Safe branding is visible in authenticated navigation", async ({ page }, testInfo) => {
+  await configureAuthenticatedWorkspace(page);
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+  await expect(page).toHaveTitle(/^Taylor Safe(?: ·|$)/);
+  if (testInfo.project.name === "mobile") {
+    await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  }
+  const navigation = page.getByLabel("Primary navigation", { exact: true });
+  await expect(navigation.locator(".brand-name")).toHaveText("Taylor Safe");
+  await expect(navigation.locator(".brand-name")).toBeVisible();
+  await expect(navigation.locator(".brand-mark")).toHaveText("TS");
+  await expect(navigation.locator(".brand-mark")).toBeVisible();
+  await expect(navigation.getByText(WORKSPACE_FIXTURE.company.name, { exact: true })).toBeVisible();
 });
 
 test("dashboard and location context work", async ({ page }) => {

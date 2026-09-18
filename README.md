@@ -1,6 +1,12 @@
-# SafetyOps
+# Taylor Safe
 
-SafetyOps is a multi-tenant application foundation for workplace safety operations across multiple locations. Its engineering baseline is the LFES Full Private Packet generated 2026-06-10 and the inherited Gold, Core, Security, Database, Reliability, Reviewability, and Deployment standards. This is an internal engineering standard, not an LFES certification or a compliance certification.
+Taylor Safe is a multi-tenant application foundation for workplace safety operations across multiple locations. Its engineering baseline is the LFES Full Private Packet generated 2026-06-10 and the inherited Gold, Core, Security, Database, Reliability, Reviewability, and Deployment standards. This is an internal engineering standard, not an LFES certification or a compliance certification.
+
+The visible application was renamed from SafetyOps to **Taylor Safe** on 2026-09-18.
+Existing repository and hosting URLs, backend project names, configuration keys,
+browser-storage keys, and evidence/consent version identifiers remain unchanged.
+Historical engineering documentation may still use the SafetyOps name. This is
+a presentation change, not a tenant-data migration or a change to signed records.
 
 The public application starts empty. It does not ship a fictional company, locations, workers, incidents, inspections, training records, documents, or tenant control mappings. GitHub Pages hosts the application shell and public regulatory reference metadata; authorized company records and private files belong in Supabase.
 

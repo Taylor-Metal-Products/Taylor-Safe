@@ -4,8 +4,8 @@
   "files": [
     {
       "path": "app.js",
-      "bytes": 472054,
-      "sha256": "570558019e41734e59c9f54315a280c2b2826b8c7a23380e3da0a5d52e599d9e"
+      "bytes": 472106,
+      "sha256": "1390586b0a159005f2ee733f7b1ce9b4c54ce9749f62e49b74c95f1427fe3b64"
     },
     {
       "path": "data.js",
@@ -14,8 +14,8 @@
     },
     {
       "path": "index.html",
-      "bytes": 1998,
-      "sha256": "c167c92eb04a4575fe91175742ca05c013d62e7f5f5c004738a59086897c3f60"
+      "bytes": 1969,
+      "sha256": "847948669fa303aa250ab72f18cb2205c6b77c27767d78ffec8e791373b5c13e"
     },
     {
       "path": "osha-reference.js",
@@ -63,7 +63,7 @@
       "sha256": "7e94b62086deecef8c0ba3b38f514e2a1944ff6c81d92fb3ff967828c406c38f"
     }
   ],
-  "aggregateSha256": "5ce500b9fa573f81816e83031e9e9bb8c5230988dc815810ddda7eb4ae941d1a",
+  "aggregateSha256": "86c3c0d93379910163f8a6e21cd69adea07f9b2390a9b1031bff55051d885543",
   "releaseFiles": [
     {
       "path": ".github/workflows/deploy-pages.yml",
@@ -77,8 +77,8 @@
     },
     {
       "path": "app.js",
-      "bytes": 472054,
-      "sha256": "570558019e41734e59c9f54315a280c2b2826b8c7a23380e3da0a5d52e599d9e"
+      "bytes": 472106,
+      "sha256": "1390586b0a159005f2ee733f7b1ce9b4c54ce9749f62e49b74c95f1427fe3b64"
     },
     {
       "path": "data.js",
@@ -202,8 +202,8 @@
     },
     {
       "path": "index.html",
-      "bytes": 1998,
-      "sha256": "c167c92eb04a4575fe91175742ca05c013d62e7f5f5c004738a59086897c3f60"
+      "bytes": 1969,
+      "sha256": "847948669fa303aa250ab72f18cb2205c6b77c27767d78ffec8e791373b5c13e"
     },
     {
       "path": "osha-reference.js",
@@ -232,8 +232,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 17391,
-      "sha256": "529aeadc09f032558235dbe193ee9e887825e79216eb886e876df9c7850b8527"
+      "bytes": 17804,
+      "sha256": "8a7f9486a3b0f77314696cecdfe5a1a93c54e8100e454814cbce3eefa568980e"
     },
     {
       "path": "safety-program-extracts.js",
@@ -447,8 +447,8 @@
     },
     {
       "path": "tests/auth-onboarding.spec.js",
-      "bytes": 19638,
-      "sha256": "9772b174013f3fbd12dd4b476c9690a5c0b0106a33b4c9ab4afbd88281238b7f"
+      "bytes": 20112,
+      "sha256": "b6e433d087d0b4c2123b8c63085d344607e3533b1f76e7fad4147e4880e166ee"
     },
     {
       "path": "tests/calendar.spec.js",
@@ -472,13 +472,13 @@
     },
     {
       "path": "tests/safety-workflows.spec.js",
-      "bytes": 22404,
-      "sha256": "851afaabce230a20ba2416a84f87ac84ae0158223e6ccb96c182536b0befd635"
+      "bytes": 22568,
+      "sha256": "30200a60f0b1bb058226b6e1b92eb48362afcdfde276197bd82c40f4ee89eb3c"
     },
     {
       "path": "tests/smoke.spec.js",
-      "bytes": 6447,
-      "sha256": "9c76ebcf8c04fae01184187eda0ec2c129152d1758e9ade950eecf8688d0ec92"
+      "bytes": 7419,
+      "sha256": "9f1c2fd871a775b9701952053c8c42899926741eacd54c84aecb1fa9b30cce39"
     },
     {
       "path": "tests/ux-paths.spec.js",
@@ -491,5 +491,5 @@
       "sha256": "7e94b62086deecef8c0ba3b38f514e2a1944ff6c81d92fb3ff967828c406c38f"
     }
   ],
-  "releaseAggregateSha256": "d7eac8bd81192545c5d604416e10c89c3b3685984c02c023d2c59040c8f68213"
+  "releaseAggregateSha256": "ea3dd6482d62b0e6898296c7836e4269a31e129ea64c093dad482c63147d30d5"
 }
