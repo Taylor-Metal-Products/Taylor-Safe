@@ -58,15 +58,28 @@ test("committee notes create a traceable action with an employee owner", async (
 
   const meetingDialog = page.getByRole("dialog");
   await meetingDialog.getByLabel("Meeting title").fill("August safety committee");
+  await meetingDialog.getByLabel("Location", { exact: true }).selectOption(LOCATION.id);
+  await expect(meetingDialog.getByLabel("Department", { exact: true })).toHaveValue("Safety Committee");
+  await meetingDialog.getByLabel("Department", { exact: true }).fill("Production safety committee");
   await meetingDialog.getByLabel("Meeting date").fill("2026-08-03");
-  await meetingDialog.getByLabel("Chair").selectOption(WORKSPACE_FIXTURE.employees.owner.id);
-  await meetingDialog.getByLabel("Attendees").selectOption([
+  await meetingDialog.getByLabel("Time", { exact: true }).fill("09:30");
+  await meetingDialog.getByLabel("Next meeting", { exact: true }).fill("2026-09-03");
+  await expect(meetingDialog.getByLabel("Chair", { exact: true })).toHaveValue("");
+  await meetingDialog.getByLabel("Chair", { exact: true }).selectOption(WORKSPACE_FIXTURE.employees.owner.id);
+  const attendees = meetingDialog.getByLabel("Employees in attendance", { exact: true });
+  await expect(attendees).toHaveAttribute("multiple", "");
+  await expect(attendees).toHaveAttribute("required", "");
+  expect(await attendees.locator("option:checked").count()).toBe(0);
+  await attendees.selectOption([
     WORKSPACE_FIXTURE.employees.owner.id,
     EMPLOYEE.id
   ]);
-  await meetingDialog.getByLabel("Agenda").fill("Review guarding observations and required follow-up.");
-  await meetingDialog.getByLabel("Meeting notes").fill("The committee reviewed the press guarding observation.");
-  await meetingDialog.getByLabel("Decisions").fill("Replace the damaged guard before the next production run.");
+  await expect(meetingDialog.getByLabel("Agenda", { exact: true })).toHaveCount(0);
+  await meetingDialog.getByLabel("Subjects and topics discussed", { exact: true }).fill("The committee reviewed the press guarding observation.");
+  await meetingDialog.getByLabel("Accidents / near misses", { exact: true }).fill("A cart passed close to the marked pedestrian aisle.");
+  await meetingDialog.getByLabel("Employee suggestions, comments, or concerns", { exact: true }).fill("Add a mirror at the blind corner.");
+  await meetingDialog.getByLabel("Discussion over concerns from previous meeting", { exact: true }).fill("The replacement aisle markings are complete.");
+  await meetingDialog.getByLabel("Decisions / recommendations", { exact: true }).fill("Replace the damaged guard before the next production run.");
   await meetingDialog.getByRole("button", { name: "Save meeting notes" }).click();
 
   await expect(page.getByText("Committee notes saved", { exact: true })).toBeVisible();
@@ -85,10 +98,19 @@ test("committee notes create a traceable action with an employee owner", async (
   await navigateTo(page, "committee", "Safety committee");
   await expect(meetingCard).toContainText("Replace press guard");
   await expect(meetingCard).toContainText(EMPLOYEE.fullName);
+  await expect(meetingCard).toContainText("Safety task list");
+  await expect(meetingCard).toContainText("Person taking care of this");
+  await expect(meetingCard).toContainText("Possible actions");
+  await expect(meetingCard).toContainText("Done / status");
   await meetingCard.getByRole("button", { name: "Finalize minutes" }).click();
   await expect(page.getByText("Committee minutes finalized", { exact: true })).toBeVisible();
   await expect(meetingCard).toContainText("Finalized");
-  await expect(meetingCard).toContainText("Final minutes SHA-256");
+  const traceability = meetingCard.locator("details").filter({ hasText: "Final minutes SHA-256" });
+  await expect(traceability).toHaveCount(1);
+  await expect(traceability).not.toHaveAttribute("open", "");
+  await expect(traceability.locator("code")).not.toBeVisible();
+  await traceability.locator("summary").click();
+  await expect(traceability.locator("code")).toBeVisible();
 
   const evidence = await page.evaluate(() => ({
     meetingCall: window.__safetyOpsFakeDb.calls.find((call) => (
@@ -103,7 +125,29 @@ test("committee notes create a traceable action with an employee owner", async (
     meeting: window.__safetyOpsFakeDb.tables.safety_committee_meetings[0],
     action: window.__safetyOpsFakeDb.tables.corrective_actions[0]
   }));
-  expect(evidence.meetingCall.payload.target_notes).toContain("press guarding observation");
+  expect(evidence.meetingCall.payload).toMatchObject({
+    target_location_id: LOCATION.id,
+    target_meeting_date: "2026-08-03",
+    target_chair_employee_id: WORKSPACE_FIXTURE.employees.owner.id,
+    target_attendee_ids: expect.arrayContaining([WORKSPACE_FIXTURE.employees.owner.id, EMPLOYEE.id]),
+    target_agenda: null,
+    target_decisions: "Replace the damaged guard before the next production run."
+  });
+  expect(evidence.meetingCall.payload.target_attendee_ids).toHaveLength(2);
+  for (const text of [
+    "Department", "Production safety committee", "Time", "09:30", "Next meeting", "2026-09-03",
+    "Subjects and topics discussed", "The committee reviewed the press guarding observation.",
+    "Accidents / near misses", "A cart passed close to the marked pedestrian aisle.",
+    "Employee suggestions, comments, or concerns", "Add a mirror at the blind corner.",
+    "Discussion over concerns from previous meeting", "The replacement aisle markings are complete."
+  ]) {
+    expect(evidence.meetingCall.payload.target_notes).toContain(text);
+  }
+  expect(() => JSON.parse(evidence.meetingCall.payload.target_notes)).toThrow();
+  // Next meeting is a retained planning reference, not a new scheduled event.
+  expect(evidence.meetingCall.payload.target_next_meeting_at ?? null).toBeNull();
+  expect(evidence.meeting.next_meeting_at).toBeNull();
+  expect(evidence.meeting.notes).toBe(evidence.meetingCall.payload.target_notes);
   expect(evidence.actionCall.payload.target_employee_id).toBe(EMPLOYEE.id);
   expect(evidence.finalizeCall.payload.target_meeting_id).toBe(evidence.meeting.id);
   expect(evidence.meeting).toMatchObject({
@@ -117,6 +161,209 @@ test("committee notes create a traceable action with an employee owner", async (
     assigned_employee_id: EMPLOYEE.id,
     assigned_to: null
   });
+});
+
+test("committee template preserves entered text and line breaks after saved records reload", async ({ page }) => {
+  await navigateTo(page, "committee", "Safety committee");
+  await page.getByRole("button", { name: "New meeting" }).click();
+  const dialog = page.getByRole("dialog");
+  const topics = 'Review guards & pedestrian routes.\n<img src=x onerror="window.__committeeInjected = true">';
+  const concerns = "Keep employee wording: <review required> & follow up.\nSecond concern on a separate line.";
+  await dialog.getByLabel("Meeting title").fill("Template wording and line breaks");
+  await dialog.getByLabel("Chair", { exact: true }).selectOption(WORKSPACE_FIXTURE.employees.owner.id);
+  await dialog.getByLabel("Subjects and topics discussed", { exact: true }).fill(topics);
+  await dialog.getByLabel("Employee suggestions, comments, or concerns", { exact: true }).fill(concerns);
+  await dialog.getByLabel("Employees in attendance", { exact: true }).selectOption(WORKSPACE_FIXTURE.employees.owner.id);
+  await dialog.getByRole("button", { name: "Save meeting notes" }).click();
+  await expect(page.getByText("Committee notes saved", { exact: true })).toBeVisible();
+
+  const savedTables = await page.evaluate(() => ({
+    safety_committee_meetings: window.__safetyOpsFakeDb.tables.safety_committee_meetings,
+    safety_committee_attendees: window.__safetyOpsFakeDb.tables.safety_committee_attendees
+  }));
+  const savedMeeting = savedTables.safety_committee_meetings[0];
+  expect(savedMeeting.notes).toContain(topics);
+  expect(savedMeeting.notes).toContain(concerns);
+  // The test backend is memory-only. Re-seed its saved response to exercise the
+  // application's reload/rehydration path without claiming hosted persistence.
+  await configureAuthenticatedWorkspace(page, { programFixture: true, tableOverrides: savedTables });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Safety committee", exact: true })).toBeVisible();
+  const card = page.locator(".meeting-card").filter({ hasText: "Template wording and line breaks" });
+  const notes = card.locator("p").filter({ hasText: "Review guards & pedestrian routes." });
+  expect(await notes.textContent()).toBe(savedMeeting.notes);
+  expect(await notes.evaluate((element) => getComputedStyle(element).whiteSpace)).toMatch(/pre-wrap|pre-line|break-spaces/);
+  await expect(card.locator("img, script")).toHaveCount(0);
+  expect(await page.evaluate(() => window.__committeeInjected)).toBeUndefined();
+});
+
+test("blank optional committee sections are not fabricated as none or future meetings", async ({ page }) => {
+  await navigateTo(page, "committee", "Safety committee");
+  await page.getByRole("button", { name: "New meeting" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Meeting title").fill("Routine committee review");
+  await dialog.getByLabel("Chair", { exact: true }).selectOption(WORKSPACE_FIXTURE.employees.owner.id);
+  const topics = dialog.getByLabel("Subjects and topics discussed", { exact: true });
+  await expect(topics).toHaveAttribute("required", "");
+  for (const label of [
+    "Time", "Next meeting", "Accidents / near misses",
+    "Employee suggestions, comments, or concerns",
+    "Discussion over concerns from previous meeting", "Decisions / recommendations"
+  ]) {
+    const field = dialog.getByLabel(label, { exact: true });
+    await expect(field).toHaveValue("");
+    await expect(field).not.toHaveAttribute("required", "");
+  }
+  await topics.fill("Reviewed safe pedestrian routes with the committee.");
+  await dialog.getByLabel("Employees in attendance", { exact: true }).selectOption(WORKSPACE_FIXTURE.employees.owner.id);
+  await dialog.getByRole("button", { name: "Save meeting notes" }).click();
+  await expect(page.getByText("Committee notes saved", { exact: true })).toBeVisible();
+  const evidence = await page.evaluate(() => ({
+    calls: window.__safetyOpsFakeDb.calls.filter((call) => call.method === "rpc"),
+    meetings: window.__safetyOpsFakeDb.tables.safety_committee_meetings
+  }));
+  expect(evidence.meetings).toHaveLength(1);
+  expect(evidence.calls.map((call) => call.name)).toEqual(["create_safety_committee_meeting"]);
+  expect(evidence.meetings[0]).toMatchObject({ agenda: null, decisions: null, next_meeting_at: null });
+  expect(evidence.meetings[0].notes).toContain("Safety Committee");
+  expect(evidence.meetings[0].notes).toContain("Reviewed safe pedestrian routes with the committee.");
+  expect(evidence.meetings[0].notes).toContain("Accidents / near misses:\nNot recorded.");
+  expect(evidence.meetings[0].notes).toContain("Employee suggestions, comments, or concerns:\nNot recorded.");
+  expect(evidence.meetings[0].notes).toContain("Discussion over concerns from previous meeting:\nNot recorded.");
+  expect(evidence.meetings[0].notes).not.toMatch(/\bNone\b|\bN\/A\b|No (accidents|near misses|concerns|suggestions)/i);
+});
+
+test("committee template rejects whitespace-only topics and department before creating a record", async ({ page }) => {
+  await navigateTo(page, "committee", "Safety committee");
+  await page.getByRole("button", { name: "New meeting" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Meeting title").fill("Committee validation check");
+  await dialog.getByLabel("Chair", { exact: true }).selectOption(WORKSPACE_FIXTURE.employees.owner.id);
+  await dialog.getByLabel("Employees in attendance", { exact: true }).selectOption(WORKSPACE_FIXTURE.employees.owner.id);
+  for (const entry of [
+    { department: "Safety Committee", notes: "    \n    " },
+    { department: "    ", notes: "Valid discussion notes with a missing department." }
+  ]) {
+    await dialog.getByLabel("Department", { exact: true }).fill(entry.department);
+    await dialog.getByLabel("Subjects and topics discussed", { exact: true }).fill(entry.notes);
+    await dialog.getByRole("button", { name: "Save meeting notes" }).click();
+    await expect(page.getByText("Meeting notes not saved", { exact: true }).last()).toBeVisible();
+    await expect(dialog).toBeVisible();
+    expect(await page.evaluate(() => window.__safetyOpsFakeDb.calls.filter((call) => (
+      call.method === "rpc" && call.name === "create_safety_committee_meeting"
+    )))).toHaveLength(0);
+    expect(await page.evaluate(() => window.__safetyOpsFakeDb.tables.safety_committee_meetings)).toHaveLength(0);
+  }
+});
+
+test("committee chair must be explicitly confirmed as attending before saving", async ({ page }) => {
+  await navigateTo(page, "committee", "Safety committee");
+  await page.getByRole("button", { name: "New meeting" }).click();
+  const dialog = page.getByRole("dialog");
+  const chair = dialog.getByLabel("Chair", { exact: true });
+  const attendees = dialog.getByLabel("Employees in attendance", { exact: true });
+  await expect(chair).toHaveValue("");
+  await expect(chair).toHaveAttribute("required", "");
+  expect(await attendees.locator("option:checked").count()).toBe(0);
+  await dialog.getByLabel("Meeting title").fill("Explicit chair attendance");
+  await dialog.getByLabel("Subjects and topics discussed", { exact: true }).fill("Review only the employees confirmed to have attended.");
+  await chair.selectOption(WORKSPACE_FIXTURE.employees.owner.id);
+  await attendees.selectOption(EMPLOYEE.id);
+  await dialog.getByRole("button", { name: "Save meeting notes" }).click();
+  await expect(page.getByText("Select the meeting chair and include them in Employees in attendance.", { exact: true })).toBeVisible();
+  await expect(dialog).toBeVisible();
+  expect(await page.evaluate(() => window.__safetyOpsFakeDb.calls.filter((call) => (
+    call.method === "rpc" && call.name === "create_safety_committee_meeting"
+  )))).toHaveLength(0);
+  expect(await page.evaluate(() => window.__safetyOpsFakeDb.tables.safety_committee_meetings)).toHaveLength(0);
+
+  // Correct the chair to the person actually selected as attending. The earlier
+  // chair choice must not be silently added by the existing backend RPC.
+  await chair.selectOption(EMPLOYEE.id);
+  await dialog.getByRole("button", { name: "Save meeting notes" }).click();
+  await expect(page.getByText("Committee notes saved", { exact: true })).toBeVisible();
+  const evidence = await page.evaluate(() => ({
+    call: window.__safetyOpsFakeDb.calls.find((call) => (
+      call.method === "rpc" && call.name === "create_safety_committee_meeting"
+    )),
+    attendees: window.__safetyOpsFakeDb.tables.safety_committee_attendees
+  }));
+  expect(evidence.call.payload.target_chair_employee_id).toBe(EMPLOYEE.id);
+  expect(evidence.call.payload.target_attendee_ids).toEqual([EMPLOYEE.id]);
+  expect(evidence.attendees.map((attendee) => attendee.employee_id)).toEqual([EMPLOYEE.id]);
+});
+
+test("changing committee location clears attendance and chair without losing typed notes", async ({ page }) => {
+  await navigateTo(page, "committee", "Safety committee");
+  await page.getByRole("button", { name: "New meeting" }).click();
+  const dialog = page.getByRole("dialog");
+  const chair = dialog.getByLabel("Chair", { exact: true });
+  const attendees = dialog.getByLabel("Employees in attendance", { exact: true });
+  const topics = dialog.getByLabel("Subjects and topics discussed", { exact: true });
+  const noteText = "Keep this discussion when correcting the meeting location.";
+  await chair.selectOption(WORKSPACE_FIXTURE.employees.owner.id);
+  await attendees.selectOption([WORKSPACE_FIXTURE.employees.owner.id, EMPLOYEE.id]);
+  await topics.fill(noteText);
+
+  // The second synthetic location has no employees; stale first-site selections
+  // must disappear and saving must stay unavailable until valid people exist.
+  await dialog.getByLabel("Location", { exact: true }).selectOption(WORKSPACE_FIXTURE.locations[1].id);
+  await expect(chair).toHaveValue("");
+  expect(await attendees.locator("option:checked").count()).toBe(0);
+  await expect(chair).toBeDisabled();
+  await expect(attendees).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Save meeting notes" })).toBeDisabled();
+  await expect(topics).toHaveValue(noteText);
+
+  await dialog.getByLabel("Location", { exact: true }).selectOption(LOCATION.id);
+  await expect(chair).toBeEnabled();
+  await expect(attendees).toBeEnabled();
+  await expect(chair).toHaveValue("");
+  expect(await attendees.locator("option:checked").count()).toBe(0);
+  await expect(topics).toHaveValue(noteText);
+  expect(await page.evaluate(() => window.__safetyOpsFakeDb.tables.safety_committee_meetings)).toHaveLength(0);
+});
+
+test("existing free-text committee notes remain intact under the familiar template layout", async ({ page }) => {
+  const legacyNotes = "Earlier free-text minutes.\nDiscussion over concerns from previous meeting was captured in prose, not structured fields.\nKeep <original> wording & punctuation.";
+  const legacyMeeting = {
+    id: "90000000-0000-4000-8000-000000000901",
+    company_id: WORKSPACE_FIXTURE.company.id,
+    location_id: LOCATION.id,
+    scope: "location",
+    title: "Earlier committee record",
+    meeting_date: "2026-07-01",
+    status: "draft",
+    chair_employee_id: WORKSPACE_FIXTURE.employees.owner.id,
+    agenda: "Original agenda remains stored.",
+    notes: legacyNotes,
+    decisions: "Original decisions remain stored.",
+    next_meeting_at: null,
+    prepared_by: WORKSPACE_FIXTURE.user.id,
+    finalized_by: null,
+    finalized_at: null,
+    minutes_sha256: null,
+    created_at: "2026-07-01T16:00:00.000Z",
+    updated_at: "2026-07-01T16:00:00.000Z",
+    safety_committee_attendees: []
+  };
+  await configureAuthenticatedWorkspace(page, {
+    programFixture: true,
+    tableOverrides: { safety_committee_meetings: [legacyMeeting] }
+  });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+  await navigateTo(page, "committee", "Safety committee");
+  const card = page.locator(".meeting-card").filter({ hasText: legacyMeeting.title });
+  expect(await card.locator("p").filter({ hasText: "Earlier free-text minutes." }).textContent()).toBe(legacyNotes);
+  await expect(card).toContainText(legacyMeeting.decisions);
+  const evidence = await page.evaluate(() => ({
+    row: window.__safetyOpsFakeDb.tables.safety_committee_meetings[0],
+    writes: window.__safetyOpsFakeDb.calls.filter((call) => call.method === "rpc")
+  }));
+  expect(evidence.row.notes).toBe(legacyNotes);
+  expect(evidence.row.agenda).toBe(legacyMeeting.agenda);
+  expect(evidence.writes).toHaveLength(0);
 });
 
 test("training assignment records completion and a retention date", async ({ page }) => {
